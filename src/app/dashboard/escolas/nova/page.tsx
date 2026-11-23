@@ -2,10 +2,13 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
 import { SchoolWizard } from "@/components/school-wizard";
+import { requireCreator } from "@/lib/schools/access";
 
 export const instant = false;
 
-export default function NewSchoolPage() {
+export default async function NewSchoolPage() {
+  await requireCreator();
+
   return (
     <div className="space-y-6">
       <Link

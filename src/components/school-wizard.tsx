@@ -6,6 +6,7 @@ import {
   Baby,
   Building2,
   Check,
+  Clipboard,
   GraduationCap,
   LoaderCircle,
   School,
@@ -15,17 +16,7 @@ import {
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
-import {
-  formatCep,
-  onlyDigits,
-  type CepAddress,
-} from "@/lib/schools/cep";
-import {
-  FACILITY_OPTIONS,
-  SHIFT_OPTIONS,
-  type FacilityOption,
-  type ShiftOption,
-} from "@/lib/schools/options";
+import { formatCep, onlyDigits, type CepAddress } from "@/lib/schools/cep";
 import {
   SEGMENTS,
   SEGMENT_IDS,
@@ -55,14 +46,8 @@ type FormFields = {
   neighborhood: string;
   city: string;
   state: string;
-  directorName: string;
-  directorEmail: string;
-  directorPhone: string;
-  pedagogicalCoordinator: string;
-  secretaryName: string;
-  shifts: ShiftOption[];
-  classrooms: string;
-  facilities: FacilityOption[];
+  adminName: string;
+  adminEmail: string;
 };
 
 const initialFields: FormFields = {
@@ -81,21 +66,11 @@ const initialFields: FormFields = {
   neighborhood: "",
   city: "",
   state: "",
-  directorName: "",
-  directorEmail: "",
-  directorPhone: "",
-  pedagogicalCoordinator: "",
-  secretaryName: "",
-  shifts: [],
-  classrooms: "",
-  facilities: [],
+  adminName: "",
+  adminEmail: "",
 };
 
-const steps = [
-  "Tipo de ensino",
-  "Dados da escola",
-  "Equipe e infraestrutura",
-];
+const steps = ["Tipo de ensino", "Dados da escola", "Administrador"];
 
 function Field({
   label,
@@ -140,55 +115,6 @@ function Field({
   );
 }
 
-function CheckGroup<T extends string>({
-  legend,
-  options,
-  value,
-  onChange,
-}: {
-  legend: string;
-  options: readonly T[];
-  value: T[];
-  onChange: (value: T[]) => void;
-}) {
-  function toggle(option: T) {
-    onChange(
-      value.includes(option)
-        ? value.filter((item) => item !== option)
-        : [...value, option],
-    );
-  }
-
-  return (
-    <fieldset>
-      <legend className="text-sm font-medium text-slate-700">{legend}</legend>
-      <div className="mt-2 flex flex-wrap gap-2">
-        {options.map((option) => {
-          const selected = value.includes(option);
-          return (
-            <label
-              key={option}
-              className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition ${
-                selected
-                  ? "border-emerald-500 bg-emerald-50 text-emerald-800"
-                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
-              }`}
-            >
-              <input
-                type="checkbox"
-                checked={selected}
-                onChange={() => toggle(option)}
-                className="size-4 accent-emerald-600"
-              />
-              {option}
-            </label>
-          );
-        })}
-      </div>
-    </fieldset>
-  );
-}
-
 export function SchoolWizard() {
   const router = useRouter();
   const [step, setStep] = useState(0);
@@ -198,6 +124,12 @@ export function SchoolWizard() {
   const [cepStatus, setCepStatus] = useState<
     "idle" | "loading" | "not-found" | "error"
   >("idle");
+  const [created, setCreated] = useState<{
+    id: string;
+    adminEmail: string;
+    temporaryPassword: string;
+  } | null>(null);
+  const [copied, setCopied] = useState(false);
   const cepRequest = useRef(0);
 
   function update<K extends keyof FormFields>(key: K, value: FormFields[K]) {
@@ -281,11 +213,11 @@ export function SchoolWizard() {
       }
     }
     if (step === 2) {
-      if (!fields.directorName.trim()) {
-        return "Informe o nome da Diretora Geral.";
+      if (!fields.adminName.trim()) {
+        return "Informe o nome do administrador da escola.";
       }
-      if (fields.classrooms && !/^\d{1,4}$/.test(fields.classrooms)) {
-        return "Informe um número válido de salas de aula.";
+      if (!/^\S+@\S+\.\S+$/.test(fields.adminEmail.trim())) {
+        return "Informe um e-mail válido para o administrador.";
       }
     }
     return "";
@@ -316,16 +248,40 @@ export function SchoolWizard() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(fields),
     });
-    const data = (await response.json()) as { id?: string; error?: string };
+    const data = (await response.json()) as {
+      id?: string;
+      adminEmail?: string;
+      temporaryPassword?: string;
+      error?: string;
+    };
 
-    if (!response.ok || !data.id) {
+    if (
+      !response.ok ||
+      !data.id ||
+      !data.adminEmail ||
+      !data.temporaryPassword
+    ) {
       setError(data.error ?? "Não foi possível salvar a configuração.");
       setPending(false);
       return;
     }
 
-    router.push(`/dashboard/escolas/${data.id}`);
-    router.refresh();
+    setCreated({
+      id: data.id,
+      adminEmail: data.adminEmail,
+      temporaryPassword: data.temporaryPassword,
+    });
+    setPending(false);
+  }
+
+  async function copyPassword() {
+    if (!created) return;
+    try {
+      await navigator.clipboard.writeText(created.temporaryPassword);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
   }
 
   const segment = fields.segment ? SEGMENTS[fields.segment] : null;
@@ -339,31 +295,115 @@ export function SchoolWizard() {
           ? "Consulta indisponível. Preencha o endereço manualmente."
           : "Digite 8 dígitos para preencher o endereço automaticamente";
 
+  if (created) {
+    return (
+      <div className="mx-auto max-w-2xl rounded-2xl border border-emerald-200 bg-white p-8 shadow-sm">
+        <div className="text-center">
+          <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+            <Check className="size-6" />
+          </span>
+          <h2 className="mt-4 text-2xl font-bold text-slate-900">
+            Escola criada com sucesso
+          </h2>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
+            Envie as credenciais abaixo ao administrador. Ele poderá fazer login
+            e gerenciar apenas esta escola.
+          </p>
+        </div>
+
+        <dl className="mt-8 grid gap-4 rounded-xl bg-slate-50 p-5 text-sm sm:grid-cols-2">
+          <div>
+            <dt className="text-xs text-slate-500">Escola</dt>
+            <dd className="mt-0.5 font-medium text-slate-800">{fields.name}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-slate-500">Administrador</dt>
+            <dd className="mt-0.5 font-medium text-slate-800">
+              {fields.adminName}
+            </dd>
+          </div>
+          <div className="sm:col-span-2">
+            <dt className="text-xs text-slate-500">E-mail de acesso</dt>
+            <dd className="mt-0.5 font-medium text-slate-800">
+              {created.adminEmail}
+            </dd>
+          </div>
+        </dl>
+
+        <div className="mt-4 rounded-xl border border-slate-200 p-5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Senha provisória
+          </p>
+          <div className="mt-2 flex items-center justify-between gap-3">
+            <code className="break-all font-mono text-sm text-slate-900">
+              {created.temporaryPassword}
+            </code>
+            <button
+              type="button"
+              onClick={copyPassword}
+              className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-emerald-300 hover:text-emerald-700"
+            >
+              <Clipboard className="size-4" />
+              {copied ? "Copiada" : "Copiar"}
+            </button>
+          </div>
+          <p className="mt-2 text-xs text-slate-400">
+            A senha aparece apenas neste momento.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => router.push(`/dashboard/escolas/${created.id}`)}
+          className="mt-6 flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 text-sm font-semibold text-white transition hover:bg-emerald-700"
+        >
+          Abrir painel da escola
+          <ArrowRight className="size-4" />
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-3xl">
       <ol className="mb-8 flex items-center gap-2">
-        {steps.map((label, index) => (
-          <li key={label} className="flex flex-1 items-center gap-2">
-            <div className="flex flex-1 flex-col gap-2">
-              <div
-                className={`h-1.5 rounded-full transition ${
-                  index <= step ? "bg-emerald-500" : "bg-slate-200"
-                }`}
-              />
-              <span
-                className={`text-xs font-medium ${
-                  index === step
-                    ? "text-emerald-700"
-                    : index < step
-                      ? "text-slate-600"
-                      : "text-slate-400"
-                }`}
-              >
-                {index + 1}. {label}
-              </span>
-            </div>
-          </li>
-        ))}
+        {steps.map((label, index) => {
+          const done = index < step;
+          const active = index === step;
+          return (
+            <li key={label} className="flex flex-1 items-center gap-2">
+              <div className="flex flex-1 flex-col gap-2">
+                <div
+                  className={`flex items-center gap-2 text-xs font-semibold ${
+                    active
+                      ? "text-emerald-700"
+                      : done
+                        ? "text-slate-700"
+                        : "text-slate-400"
+                  }`}
+                >
+                  <span
+                    className={`flex size-6 items-center justify-center rounded-full text-[11px] ${
+                      active
+                        ? "bg-emerald-600 text-white"
+                        : done
+                          ? "bg-emerald-100 text-emerald-700"
+                          : "bg-slate-100 text-slate-400"
+                    }`}
+                  >
+                    {done ? <Check className="size-3.5" /> : index + 1}
+                  </span>
+                  <span className="truncate">{label}</span>
+                </div>
+                <div
+                  className={`h-1 rounded-full ${
+                    done || active ? "bg-emerald-500" : "bg-slate-200"
+                  }`}
+                />
+              </div>
+            </li>
+          );
+        })}
       </ol>
 
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
@@ -373,8 +413,8 @@ export function SchoolWizard() {
               Que tipo de instituição você vai configurar?
             </h2>
             <p className="mt-2 text-sm text-slate-500">
-              Essa escolha define quais módulos estarão disponíveis no painel
-              da escola.
+              Essa escolha define quais módulos estarão disponíveis no painel da
+              escola.
             </p>
 
             <div className="mt-6 grid gap-3 sm:grid-cols-3">
@@ -387,10 +427,10 @@ export function SchoolWizard() {
                     key={id}
                     type="button"
                     onClick={() => update("segment", id)}
-                    className={`relative rounded-xl border p-4 text-left transition ${
+                    className={`flex flex-col items-start gap-3 rounded-xl border p-4 text-left transition ${
                       selected
-                        ? "border-emerald-500 bg-emerald-50/60 ring-2 ring-emerald-100"
-                        : "border-slate-200 bg-white hover:border-slate-300"
+                        ? "border-emerald-500 bg-emerald-50 ring-2 ring-emerald-100"
+                        : "border-slate-200 bg-white hover:border-emerald-300"
                     }`}
                   >
                     <span
@@ -402,39 +442,18 @@ export function SchoolWizard() {
                     >
                       <Icon className="size-5" />
                     </span>
-                    <span className="mt-4 block text-sm font-semibold text-slate-900">
-                      {option.label}
-                    </span>
-                    <span className="mt-1 block text-xs leading-5 text-slate-500">
-                      {option.audience}
-                    </span>
-                    {selected && (
-                      <span className="absolute right-3 top-3 flex size-5 items-center justify-center rounded-full bg-emerald-600 text-white">
-                        <Check className="size-3" />
+                    <span>
+                      <span className="block text-sm font-semibold text-slate-900">
+                        {option.label}
                       </span>
-                    )}
+                      <span className="mt-1 block text-xs leading-5 text-slate-500">
+                        {option.audience}
+                      </span>
+                    </span>
                   </button>
                 );
               })}
             </div>
-
-            {segment && (
-              <div className="mt-6 rounded-xl bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Módulos que serão habilitados
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {modules.map((module) => (
-                    <span
-                      key={module.id}
-                      className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-600"
-                    >
-                      {module.name}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         )}
 
@@ -448,7 +467,7 @@ export function SchoolWizard() {
               comunicados.
             </p>
 
-            <div className="mt-6 space-y-5">
+            <div className="mt-6 space-y-4">
               <Field
                 label="Nome da escola"
                 value={fields.name}
@@ -471,7 +490,7 @@ export function SchoolWizard() {
                   placeholder="Somente números"
                   hint="Opcional"
                   inputMode="numeric"
-                  maxLength={14}
+                  maxLength={18}
                 />
                 <Field
                   label="Código INEP"
@@ -570,7 +589,7 @@ export function SchoolWizard() {
                   <Field
                     label="UF"
                     value={fields.state}
-                    onChange={(value) => update("state", value.slice(0, 2))}
+                    onChange={(value) => update("state", value.toUpperCase())}
                     placeholder="SP"
                     required
                     maxLength={2}
@@ -585,174 +604,88 @@ export function SchoolWizard() {
         {step === 2 && (
           <div>
             <h2 className="text-xl font-semibold text-slate-900">
-              Equipe e infraestrutura
+              Administrador da escola
             </h2>
             <p className="mt-2 text-sm text-slate-500">
-              Informe a equipe pedagógica, os turnos e a estrutura da escola.
+              Crie o usuário que terá acesso exclusivo ao gerenciamento desta
+              escola.
             </p>
 
-            <div className="mt-6 space-y-6">
-              <section className="space-y-4">
-                <p className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-                  <UserRound className="size-4 text-emerald-600" />
-                  Diretoria e Equipe Pedagógica
-                </p>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Field
-                    label="Diretora Geral"
-                    value={fields.directorName}
-                    onChange={(value) => update("directorName", value)}
-                    placeholder="Maria da Silva"
-                    required
-                  />
-                  <Field
-                    label="Coordenador Pedagógico"
-                    value={fields.pedagogicalCoordinator}
-                    onChange={(value) => update("pedagogicalCoordinator", value)}
-                    placeholder="Ana Souza"
-                  />
-                  <Field
-                    label="Secretaria Escolar"
-                    value={fields.secretaryName}
-                    onChange={(value) => update("secretaryName", value)}
-                    placeholder="Carla Lima"
-                  />
-                  <Field
-                    label="E-mail da direção"
-                    value={fields.directorEmail}
-                    onChange={(value) => update("directorEmail", value)}
-                    placeholder="direcao@escola.com.br"
-                    type="email"
-                    inputMode="email"
-                  />
-                </div>
+            <section className="mt-6 space-y-4">
+              <p className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                <UserRound className="size-4 text-emerald-600" />
+                Dados de acesso
+              </p>
+              <div className="grid gap-4 sm:grid-cols-2">
                 <Field
-                  label="Telefone da direção"
-                  value={fields.directorPhone}
-                  onChange={(value) => update("directorPhone", value)}
-                  placeholder="(11) 90000-0000"
-                  inputMode="tel"
+                  label="Nome completo"
+                  value={fields.adminName}
+                  onChange={(value) => update("adminName", value)}
+                  placeholder="João da Silva"
+                  required
                 />
-              </section>
-
-              <section className="space-y-4 border-t border-slate-100 pt-6">
-                <p className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-                  <Building2 className="size-4 text-emerald-600" />
-                  Infraestrutura e Números
-                </p>
-                <CheckGroup
-                  legend="Turnos de Funcionamento"
-                  options={SHIFT_OPTIONS}
-                  value={fields.shifts}
-                  onChange={(value) => update("shifts", value)}
+                <Field
+                  label="E-mail"
+                  value={fields.adminEmail}
+                  onChange={(value) => update("adminEmail", value)}
+                  placeholder="admin@escola.com.br"
+                  type="email"
+                  inputMode="email"
+                  required
+                  hint="Será usado para fazer login"
                 />
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Field
-                    label="Salas de aula"
-                    value={fields.classrooms}
-                    onChange={(value) => update("classrooms", value)}
-                    placeholder="12"
-                    hint="Opcional"
-                    type="number"
-                    inputMode="numeric"
-                    maxLength={4}
-                  />
-                </div>
-                <CheckGroup
-                  legend="Dependências"
-                  options={FACILITY_OPTIONS}
-                  value={fields.facilities}
-                  onChange={(value) => update("facilities", value)}
-                />
-              </section>
-
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
-                <p className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                  <UserRound className="size-4 text-emerald-600" />
-                  Resumo da configuração
-                </p>
-                <dl className="mt-4 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
-                  <div>
-                    <dt className="text-xs text-slate-500">Tipo de ensino</dt>
-                    <dd className="mt-0.5 font-medium text-slate-800">
-                      {segment?.label}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-slate-500">Escola</dt>
-                    <dd className="mt-0.5 font-medium text-slate-800">
-                      {fields.name}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-slate-500">Razão Social</dt>
-                    <dd className="mt-0.5 font-medium text-slate-800">
-                      {fields.legalName || "—"}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-slate-500">Código INEP</dt>
-                    <dd className="mt-0.5 font-medium text-slate-800">
-                      {fields.inepCode || "—"}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-slate-500">Ano de fundação</dt>
-                    <dd className="mt-0.5 font-medium text-slate-800">
-                      {fields.foundedYear || "—"}
-                    </dd>
-                  </div>
-                  <div className="sm:col-span-2">
-                    <dt className="text-xs text-slate-500">Endereço</dt>
-                    <dd className="mt-0.5 font-medium text-slate-800">
-                      {fields.street}, {fields.number}
-                      {fields.complement ? ` — ${fields.complement}` : ""} ·{" "}
-                      {fields.neighborhood} · {fields.city}/{fields.state.toUpperCase()}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-slate-500">Diretora Geral</dt>
-                    <dd className="mt-0.5 font-medium text-slate-800">
-                      {fields.directorName || "—"}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-slate-500">Equipe pedagógica</dt>
-                    <dd className="mt-0.5 font-medium text-slate-800">
-                      {[
-                        fields.pedagogicalCoordinator,
-                        fields.secretaryName,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ") || "—"}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-slate-500">Turnos</dt>
-                    <dd className="mt-0.5 font-medium text-slate-800">
-                      {fields.shifts.join(", ") || "—"}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-slate-500">Salas de aula</dt>
-                    <dd className="mt-0.5 font-medium text-slate-800">
-                      {fields.classrooms || "—"}
-                    </dd>
-                  </div>
-                  <div className="sm:col-span-2">
-                    <dt className="text-xs text-slate-500">Dependências</dt>
-                    <dd className="mt-0.5 font-medium text-slate-800">
-                      {fields.facilities.join(", ") || "—"}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-slate-500">Módulos ativos</dt>
-                    <dd className="mt-0.5 font-medium text-slate-800">
-                      {modules.length}
-                    </dd>
-                  </div>
-                </dl>
               </div>
+              <p className="rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                Uma senha provisória será gerada ao final e exibida apenas uma
+                vez. Você deverá enviá-la ao administrador.
+              </p>
+            </section>
+
+            <div className="mt-6 rounded-xl bg-slate-50 p-5">
+              <p className="text-sm font-semibold text-slate-800">
+                Resumo da configuração
+              </p>
+              <dl className="mt-4 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+                <div>
+                  <dt className="text-xs text-slate-500">Tipo de ensino</dt>
+                  <dd className="mt-0.5 font-medium text-slate-800">
+                    {segment?.label}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-slate-500">Escola</dt>
+                  <dd className="mt-0.5 font-medium text-slate-800">
+                    {fields.name}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-slate-500">Código INEP</dt>
+                  <dd className="mt-0.5 font-medium text-slate-800">
+                    {fields.inepCode || "—"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-slate-500">Administrador</dt>
+                  <dd className="mt-0.5 font-medium text-slate-800">
+                    {fields.adminName || "—"}
+                  </dd>
+                </div>
+                <div className="sm:col-span-2">
+                  <dt className="text-xs text-slate-500">Endereço</dt>
+                  <dd className="mt-0.5 font-medium text-slate-800">
+                    {fields.street}, {fields.number}
+                    {fields.complement ? ` — ${fields.complement}` : ""} ·{" "}
+                    {fields.neighborhood} · {fields.city}/
+                    {fields.state.toUpperCase()}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-slate-500">Módulos ativos</dt>
+                  <dd className="mt-0.5 font-medium text-slate-800">
+                    {modules.length}
+                  </dd>
+                </div>
+              </dl>
             </div>
           </div>
         )}
@@ -774,7 +707,7 @@ export function SchoolWizard() {
               setStep((current) => Math.max(0, current - 1));
             }}
             disabled={step === 0 || pending}
-            className="inline-flex h-10 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 disabled:invisible"
+            className="inline-flex h-11 items-center gap-2 rounded-lg px-4 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 disabled:pointer-events-none disabled:opacity-40"
           >
             <ArrowLeft className="size-4" />
             Voltar
@@ -784,7 +717,7 @@ export function SchoolWizard() {
             <button
               type="button"
               onClick={goNext}
-              className="inline-flex h-10 items-center gap-2 rounded-lg bg-emerald-600 px-5 text-sm font-semibold text-white transition hover:bg-emerald-700"
+              className="inline-flex h-11 items-center gap-2 rounded-lg bg-emerald-600 px-5 text-sm font-semibold text-white transition hover:bg-emerald-700"
             >
               Continuar
               <ArrowRight className="size-4" />
@@ -794,7 +727,7 @@ export function SchoolWizard() {
               type="button"
               onClick={submit}
               disabled={pending}
-              className="inline-flex h-10 items-center gap-2 rounded-lg bg-emerald-600 px-5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70"
+              className="inline-flex h-11 items-center gap-2 rounded-lg bg-emerald-600 px-5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60"
             >
               {pending && <LoaderCircle className="size-4 animate-spin" />}
               Concluir configuração

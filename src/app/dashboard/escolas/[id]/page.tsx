@@ -1,20 +1,25 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import {
   ArrowLeft,
   BadgeCheck,
   Building2,
   Check,
   ClipboardList,
+  DoorOpen,
+  GraduationCap,
   Mail,
   MapPin,
   Phone,
   UserRound,
+  Users,
 } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { SchoolManagement } from "@/components/school-management";
 import { db } from "@/lib/db/client";
-import { schools, schoolMembers } from "@/lib/db/schema";
+import { classrooms, schools, students, teachers } from "@/lib/db/schema";
+import { canAccessSchool, canManageSchool } from "@/lib/schools/access";
 import { SEGMENTS, getModules } from "@/lib/schools/segments";
 import { requireUser } from "@/lib/session";
 
@@ -28,18 +33,44 @@ export default async function SchoolDetailsPage({
   const { id } = await params;
   const session = await requireUser();
 
-  const rows = await db
-    .select({ school: schools })
+  if (!(await canAccessSchool(session.user.id, id))) notFound();
+
+  const canManage = await canManageSchool(session.user.id, id);
+
+  const [school] = await db
+    .select()
     .from(schools)
-    .innerJoin(schoolMembers, eq(schoolMembers.schoolId, schools.id))
-    .where(
-      and(eq(schools.id, id), eq(schoolMembers.userId, session.user.id)),
-    )
+    .where(eq(schools.id, id))
     .limit(1);
 
-  if (rows.length === 0) notFound();
+  if (!school) notFound();
 
-  const school = rows[0].school;
+  const classroomRows = await db
+    .select()
+    .from(classrooms)
+    .where(eq(classrooms.schoolId, id))
+    .orderBy(asc(classrooms.name));
+
+  const teacherRows = await db
+    .select({ teacher: teachers, classroomName: classrooms.name })
+    .from(teachers)
+    .leftJoin(classrooms, eq(teachers.classroomId, classrooms.id))
+    .where(eq(teachers.schoolId, id))
+    .orderBy(asc(teachers.name));
+
+  const studentRows = await db
+    .select({ student: students, classroomName: classrooms.name })
+    .from(students)
+    .leftJoin(classrooms, eq(students.classroomId, classrooms.id))
+    .where(eq(students.schoolId, id))
+    .orderBy(asc(students.name));
+
+  const [myTeacher] = await db
+    .select()
+    .from(teachers)
+    .where(and(eq(teachers.schoolId, id), eq(teachers.userId, session.user.id)))
+    .limit(1);
+
   const segment = SEGMENTS[school.segment];
   const modules = getModules(school.segment);
   const address = [
@@ -51,6 +82,27 @@ export default async function SchoolDetailsPage({
   ]
     .filter(Boolean)
     .join(" · ");
+
+  const teacherItems = teacherRows.map(({ teacher, classroomName }) => ({
+    id: teacher.id,
+    name: teacher.name,
+    email: teacher.email,
+    discipline: teacher.discipline,
+    classroomId: teacher.classroomId,
+    classroomName,
+  }));
+
+  const studentItems = studentRows.map(({ student, classroomName }) => ({
+    id: student.id,
+    name: student.name,
+    status: student.status,
+    classroomId: student.classroomId,
+    classroomName,
+  }));
+
+  const activeStudents = studentItems.filter(
+    (student) => student.status === "ativo",
+  ).length;
 
   return (
     <div className="space-y-6">
@@ -79,6 +131,100 @@ export default async function SchoolDetailsPage({
           Identificador: {school.slug}
         </span>
       </div>
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <div className="rounded-2xl border border-slate-200 bg-white p-6">
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+            <Users className="size-4 text-emerald-600" />
+            Total de Alunos Matriculados
+          </div>
+          <p className="mt-3 text-3xl font-bold text-slate-900">
+            {activeStudents}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">Matrículas ativas</p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-6">
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+            <GraduationCap className="size-4 text-emerald-600" />
+            Total de Professores
+          </div>
+          <p className="mt-3 text-3xl font-bold text-slate-900">
+            {teacherRows.length}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            Usuários com perfil de professor
+          </p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-6">
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+            <DoorOpen className="size-4 text-emerald-600" />
+            Salas de aula
+          </div>
+          <p className="mt-3 text-3xl font-bold text-slate-900">
+            {classroomRows.length}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">Turmas cadastradas</p>
+        </div>
+      </div>
+
+      {canManage ? (
+        <SchoolManagement
+          schoolId={id}
+          profile={{
+            directorName: school.directorName ?? "",
+            directorEmail: school.directorEmail ?? "",
+            directorPhone: school.directorPhone ?? "",
+            pedagogicalCoordinator: school.pedagogicalCoordinator ?? "",
+            secretaryName: school.secretaryName ?? "",
+            shifts: school.shifts,
+            classrooms: school.classrooms?.toString() ?? "",
+            facilities: school.facilities,
+          }}
+          initial={{
+            classrooms: classroomRows,
+            teachers: teacherItems,
+            students: studentItems,
+          }}
+        />
+      ) : (
+        <section className="rounded-2xl border border-slate-200 bg-white p-6">
+          <h2 className="text-base font-semibold text-slate-900">Minha turma</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Suas informações de professor nesta escola.
+          </p>
+
+          <dl className="mt-5 grid gap-4 text-sm sm:grid-cols-2">
+            <div>
+              <dt className="text-xs text-slate-500">Professor</dt>
+              <dd className="mt-0.5 font-medium text-slate-800">
+                {myTeacher?.name ?? session.user.name}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-slate-500">Disciplina</dt>
+              <dd className="mt-0.5 font-medium text-slate-800">
+                {myTeacher?.discipline || "Não informada"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-slate-500">Sala de aula</dt>
+              <dd className="mt-0.5 font-medium text-slate-800">
+                {classroomRows.find((item) => item.id === myTeacher?.classroomId)
+                  ?.name ?? "Não vinculada"}
+              </dd>
+            </div>
+            <div className="sm:col-span-2">
+              <dt className="text-xs text-slate-500">Alunos da sala</dt>
+              <dd className="mt-1 leading-6 text-slate-700">
+                {studentItems
+                  .filter((item) => item.classroomId === myTeacher?.classroomId)
+                  .map((item) => item.name)
+                  .join(", ") || "Nenhum aluno matriculado"}
+              </dd>
+            </div>
+          </dl>
+        </section>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2">
         <section className="rounded-2xl border border-slate-200 bg-white p-6">
@@ -112,12 +258,6 @@ export default async function SchoolDetailsPage({
                 <dd className="mt-0.5 text-slate-700">{school.legalName}</dd>
               </div>
             )}
-            {school.cnpj && (
-              <div>
-                <dt className="text-xs text-slate-500">CNPJ</dt>
-                <dd className="mt-0.5 text-slate-700">{school.cnpj}</dd>
-              </div>
-            )}
             {school.inepCode && (
               <div>
                 <dt className="text-xs text-slate-500">Código INEP</dt>
@@ -136,45 +276,27 @@ export default async function SchoolDetailsPage({
         <section className="rounded-2xl border border-slate-200 bg-white p-6">
           <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
             <UserRound className="size-4 text-emerald-600" />
-            Diretoria e Equipe Pedagógica
+            Equipe pedagógica cadastrada
           </h2>
           <dl className="mt-4 space-y-3 text-sm">
             <div>
               <dt className="text-xs text-slate-500">Diretora Geral</dt>
               <dd className="mt-0.5 font-medium text-slate-800">
-                {school.directorName}
+                {school.directorName || "Não informado"}
               </dd>
             </div>
-            {school.pedagogicalCoordinator && (
-              <div>
-                <dt className="text-xs text-slate-500">
-                  Coordenador Pedagógico
-                </dt>
-                <dd className="mt-0.5 font-medium text-slate-800">
-                  {school.pedagogicalCoordinator}
-                </dd>
-              </div>
-            )}
-            {school.secretaryName && (
-              <div>
-                <dt className="text-xs text-slate-500">Secretaria Escolar</dt>
-                <dd className="mt-0.5 font-medium text-slate-800">
-                  {school.secretaryName}
-                </dd>
-              </div>
-            )}
-            {school.directorEmail && (
-              <div className="flex items-center gap-2 text-slate-600">
-                <Mail className="size-4 text-slate-400" />
-                {school.directorEmail}
-              </div>
-            )}
-            {school.directorPhone && (
-              <div className="flex items-center gap-2 text-slate-600">
-                <Phone className="size-4 text-slate-400" />
-                {school.directorPhone}
-              </div>
-            )}
+            <div>
+              <dt className="text-xs text-slate-500">Coordenador Pedagógico</dt>
+              <dd className="mt-0.5 font-medium text-slate-800">
+                {school.pedagogicalCoordinator || "Não informado"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-slate-500">Secretaria Escolar</dt>
+              <dd className="mt-0.5 font-medium text-slate-800">
+                {school.secretaryName || "Não informado"}
+              </dd>
+            </div>
           </dl>
         </section>
       </div>
@@ -243,11 +365,6 @@ export default async function SchoolDetailsPage({
             </div>
           ))}
         </div>
-
-        <p className="mt-5 rounded-lg bg-slate-50 px-4 py-3 text-xs text-slate-500">
-          Os módulos estão definidos. A próxima etapa do projeto é implementar
-          os fluxos de cada um deles por segmento.
-        </p>
       </section>
     </div>
   );

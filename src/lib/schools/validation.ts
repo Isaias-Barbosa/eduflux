@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 import { onlyDigits } from "./cep";
-import { FACILITY_OPTIONS, SHIFT_OPTIONS } from "./options";
 
 const requiredText = (label: string, max = 120) =>
   z
@@ -63,18 +62,8 @@ export const createSchoolSchema = z.object({
     .trim()
     .length(2, "Informe a sigla do estado (UF)")
     .transform((value) => value.toUpperCase()),
-  directorName: requiredText("Diretora Geral"),
-  directorEmail: optionalEmail,
-  directorPhone: z.string().trim().max(20, "Telefone muito longo").default(""),
-  pedagogicalCoordinator: optionalText(120),
-  secretaryName: optionalText(120),
-  shifts: z.array(z.enum([...SHIFT_OPTIONS])).default([]),
-  classrooms: z
-    .string()
-    .trim()
-    .regex(/^(\d{1,4})?$/, "Número de salas inválido")
-    .default(""),
-  facilities: z.array(z.enum([...FACILITY_OPTIONS])).default([]),
+  adminName: requiredText("Nome do administrador", 120),
+  adminEmail: z.string().trim().email("E-mail do administrador inválido"),
 });
 
 export type CreateSchoolInput = z.infer<typeof createSchoolSchema>;

@@ -7,6 +7,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
+import { user } from "./auth-schema";
 import type { FacilityOption, ShiftOption } from "@/lib/schools/options";
 import type { SchoolSegment } from "@/lib/schools/segments";
 
@@ -76,7 +77,9 @@ export const schoolMembers = sqliteTable(
       .notNull()
       .references(() => schools.id, { onDelete: "cascade" }),
     userId: text("user_id").notNull(),
-    role: text("role", { enum: ["admin", "secretaria", "professor"] })
+    role: text("role", {
+      enum: ["owner", "admin", "secretaria", "professor"],
+    })
       .notNull()
       .default("admin"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
@@ -89,6 +92,79 @@ export const schoolMembers = sqliteTable(
       table.userId,
     ),
     index("school_members_user_id_idx").on(table.userId),
+  ],
+);
+
+/** Salas/turmas da escola. Um professor pode ser responsável por uma sala. */
+export const classrooms = sqliteTable(
+  "classrooms",
+  {
+    id: text("id").primaryKey(),
+    schoolId: text("school_id")
+      .notNull()
+      .references(() => schools.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    shift: text("shift"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    uniqueIndex("classrooms_school_name_idx").on(table.schoolId, table.name),
+    index("classrooms_school_id_idx").on(table.schoolId),
+  ],
+);
+
+/** Professores cadastrados pelo administrador da escola. */
+export const teachers = sqliteTable(
+  "teachers",
+  {
+    id: text("id").primaryKey(),
+    schoolId: text("school_id")
+      .notNull()
+      .references(() => schools.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    email: text("email").notNull(),
+    discipline: text("discipline").notNull().default(""),
+    classroomId: text("classroom_id").references(() => classrooms.id, {
+      onDelete: "set null",
+    }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    uniqueIndex("teachers_school_email_idx").on(table.schoolId, table.email),
+    index("teachers_school_id_idx").on(table.schoolId),
+    index("teachers_classroom_id_idx").on(table.classroomId),
+  ],
+);
+
+/** Alunos matriculados. A contagem do dashboard considera apenas ativos. */
+export const students = sqliteTable(
+  "students",
+  {
+    id: text("id").primaryKey(),
+    schoolId: text("school_id")
+      .notNull()
+      .references(() => schools.id, { onDelete: "cascade" }),
+    classroomId: text("classroom_id").references(() => classrooms.id, {
+      onDelete: "set null",
+    }),
+    name: text("name").notNull(),
+    status: text("status", { enum: ["ativo", "inativo"] })
+      .notNull()
+      .default("ativo"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    index("students_school_id_idx").on(table.schoolId),
+    index("students_classroom_id_idx").on(table.classroomId),
   ],
 );
 

@@ -1,9 +1,11 @@
 import { ArrowRight, Building2, Plus } from "lucide-react";
 import Link from "next/link";
 import { desc, eq } from "drizzle-orm";
+import { redirect } from "next/navigation";
 
 import { db } from "@/lib/db/client";
 import { schools, schoolMembers } from "@/lib/db/schema";
+import { isPlatformCreator } from "@/lib/schools/access";
 import { SEGMENTS, getModules, type SchoolSegment } from "@/lib/schools/segments";
 import { requireUser } from "@/lib/session";
 
@@ -11,15 +13,26 @@ export const instant = false;
 
 export default async function DashboardPage() {
   const session = await requireUser();
+  const creator = await isPlatformCreator(session.user.id);
 
-  const rows = await db
-    .select({ school: schools })
-    .from(schoolMembers)
-    .innerJoin(schools, eq(schoolMembers.schoolId, schools.id))
-    .where(eq(schoolMembers.userId, session.user.id))
-    .orderBy(desc(schools.createdAt));
+  const rows = creator
+    ? await db
+        .select({ school: schools })
+        .from(schools)
+        .orderBy(desc(schools.createdAt))
+    : await db
+        .select({ school: schools })
+        .from(schoolMembers)
+        .innerJoin(schools, eq(schoolMembers.schoolId, schools.id))
+        .where(eq(schoolMembers.userId, session.user.id))
+        .orderBy(desc(schools.createdAt));
 
   const items = rows.map((row) => row.school);
+
+  if (!creator && items.length === 1) {
+    redirect(`/dashboard/escolas/${items[0].id}`);
+  }
+
   const counts = Object.keys(SEGMENTS).reduce<Record<string, number>>(
     (acc, key) => {
       acc[key] = items.filter((item) => item.segment === key).length;
@@ -34,19 +47,23 @@ export default async function DashboardPage() {
         <div>
           <p className="text-sm font-medium text-emerald-600">Visão geral</p>
           <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-900">
-            Minhas escolas
+            {creator ? "Minhas escolas" : "Minha escola"}
           </h1>
           <p className="mt-2 text-sm text-slate-500">
-            Cada escola tem sua própria configuração e conjunto de módulos.
+            {creator
+              ? "Gerencie todas as escolas criadas na plataforma."
+              : "Escolas às quais você tem acesso como administrador."}
           </p>
         </div>
-        <Link
-          href="/dashboard/escolas/nova"
-          className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700"
-        >
-          <Plus className="size-4" />
-          Nova escola
-        </Link>
+        {creator && (
+          <Link
+            href="/dashboard/escolas/nova"
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700"
+          >
+            <Plus className="size-4" />
+            Nova escola
+          </Link>
+        )}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
@@ -77,19 +94,22 @@ export default async function DashboardPage() {
             <Building2 className="size-6" />
           </span>
           <h2 className="mt-4 text-lg font-semibold text-slate-900">
-            Nenhuma escola configurada ainda
+            Nenhuma escola vinculada
           </h2>
           <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
-            Comece informando o tipo de ensino e os dados da instituição. A
-            configuração leva poucos minutos.
+            {creator
+              ? "Comece informando o tipo de ensino e os dados da instituição."
+              : "Entre em contato com o criador da plataforma para receber acesso à sua escola."}
           </p>
-          <Link
-            href="/dashboard/escolas/nova"
-            className="mt-6 inline-flex h-10 items-center gap-2 rounded-lg bg-emerald-600 px-5 text-sm font-semibold text-white transition hover:bg-emerald-700"
-          >
-            Configurar primeira escola
-            <ArrowRight className="size-4" />
-          </Link>
+          {creator && (
+            <Link
+              href="/dashboard/escolas/nova"
+              className="mt-6 inline-flex h-10 items-center gap-2 rounded-lg bg-emerald-600 px-5 text-sm font-semibold text-white transition hover:bg-emerald-700"
+            >
+              Configurar primeira escola
+              <ArrowRight className="size-4" />
+            </Link>
+          )}
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -112,11 +132,11 @@ export default async function DashboardPage() {
                 </h2>
                 <p className="mt-1 text-sm text-slate-500">
                   {[school.city, school.state].filter(Boolean).join(" / ") ||
-                  "Endereço não informado"}
+                    "Endereço não informado"}
                 </p>
                 <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4 text-xs text-slate-500">
                   <span>{getModules(school.segment).length} módulos ativos</span>
-                  <span>Dir. {school.directorName}</span>
+                  <span>Gerenciar</span>
                 </div>
               </Link>
             );

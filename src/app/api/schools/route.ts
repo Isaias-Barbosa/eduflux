@@ -1,9 +1,13 @@
+import { randomBytes } from "node:crypto";
+
 import { eq } from "drizzle-orm";
 import { headers } from "next/headers";
 
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db/client";
 import { schools, schoolMembers } from "@/lib/db/schema";
+import { isPlatformCreator } from "@/lib/schools/access";
+import { createManagedUser, findUserByEmail } from "@/lib/schools/managed-users";
 import { createSchoolSchema, slugify } from "@/lib/schools/validation";
 
 export async function POST(request: Request) {
@@ -13,6 +17,13 @@ export async function POST(request: Request) {
     return Response.json(
       { error: "Sua sessão expirou. Entre novamente." },
       { status: 401 },
+    );
+  }
+
+  if (!(await isPlatformCreator(session.user.id))) {
+    return Response.json(
+      { error: "Somente o criador da plataforma pode cadastrar escolas." },
+      { status: 403 },
     );
   }
 
@@ -33,6 +44,33 @@ export async function POST(request: Request) {
   }
 
   const data = parsed.data;
+  const adminEmail = data.adminEmail.toLowerCase();
+
+  const existingAdmin = await findUserByEmail(adminEmail);
+
+  if (existingAdmin) {
+    return Response.json(
+      { error: "Já existe um usuário com o e-mail do administrador." },
+      { status: 409 },
+    );
+  }
+
+  const temporaryPassword = `${randomBytes(6).toString("base64url")}Aa1!`;
+
+  let adminUserId: string;
+  try {
+    adminUserId = await createManagedUser({
+      name: data.adminName,
+      email: adminEmail,
+      password: temporaryPassword,
+    });
+  } catch {
+    return Response.json(
+      { error: "Não foi possível criar o usuário administrador." },
+      { status: 400 },
+    );
+  }
+
   const baseSlug = slugify(data.name);
   let slug = baseSlug;
 
@@ -68,23 +106,28 @@ export async function POST(request: Request) {
       neighborhood: data.neighborhood,
       city: data.city,
       state: data.state,
-      directorName: data.directorName,
-      directorEmail: data.directorEmail || null,
-      directorPhone: data.directorPhone || null,
-      pedagogicalCoordinator: data.pedagogicalCoordinator || null,
-      secretaryName: data.secretaryName || null,
-      shifts: data.shifts,
-      classrooms: data.classrooms ? Number(data.classrooms) : null,
-      facilities: data.facilities,
+      // Preenchido pelo administrador da escola no gerenciamento.
+      directorName: "",
     });
 
-    await tx.insert(schoolMembers).values({
-      id: crypto.randomUUID(),
-      schoolId: id,
-      userId: session.user.id,
-      role: "admin",
-    });
+    await tx.insert(schoolMembers).values([
+      {
+        id: crypto.randomUUID(),
+        schoolId: id,
+        userId: session.user.id,
+        role: "owner",
+      },
+      {
+        id: crypto.randomUUID(),
+        schoolId: id,
+        userId: adminUserId,
+        role: "admin",
+      },
+    ]);
   });
 
-  return Response.json({ id, slug }, { status: 201 });
+  return Response.json(
+    { id, slug, adminEmail, temporaryPassword },
+    { status: 201 },
+  );
 }
