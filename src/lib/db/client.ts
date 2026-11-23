@@ -1,3 +1,5 @@
+import "@/lib/env";
+
 import { mkdirSync } from "node:fs";
 
 import { createClient } from "@libsql/client";
@@ -6,14 +8,25 @@ import { drizzle } from "drizzle-orm/libsql";
 import * as authSchema from "./auth-schema";
 import * as appSchema from "./schema";
 
-const databaseUrl = process.env.DATABASE_URL ?? "file:./data/eduflux.db";
+// O Vercel (integração Turso) expõe TURSO_DATABASE_URL/TURSO_AUTH_TOKEN.
+// Mantemos DATABASE_URL como alternativa para desenvolvimento local.
+const databaseUrl =
+  process.env.TURSO_DATABASE_URL ??
+  process.env.DATABASE_URL ??
+  "file:./data/eduflux.db";
+const authToken =
+  process.env.TURSO_AUTH_TOKEN ?? process.env.DATABASE_AUTH_TOKEN;
 
-// O libsql cria o arquivo, mas não cria a pasta; garantimos ela aqui.
+const isRemote = /^(libsql|https?):/.test(databaseUrl);
+
+// O libsql cria o arquivo, mas não cria a pasta; apenas faz isso em modo local.
 if (databaseUrl.startsWith("file:")) {
   mkdirSync("./data", { recursive: true });
 }
 
-const client = createClient({ url: databaseUrl });
+const client = isRemote
+  ? createClient({ url: databaseUrl, authToken })
+  : createClient({ url: databaseUrl });
 
 export const db = drizzle(client, {
   schema: { ...authSchema, ...appSchema },

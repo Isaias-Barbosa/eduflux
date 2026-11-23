@@ -40,6 +40,22 @@ Acesse `http://localhost:3000`. Crie uma conta em `/login?mode=signup`, clique e
 
 Ao concluir, a escola é salva com um vínculo de administrador para a conta atual e a página da escola mostra os dados e os módulos habilitados.
 
+## Deploy na Vercel com Turso
+
+A integração do Turso na Vercel cria automaticamente `TURSO_DATABASE_URL` e `TURSO_AUTH_TOKEN`. O código usa essas variáveis antes de `DATABASE_URL`, então não é preciso duplicar a URL do banco.
+
+1. Confirme que `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `BETTER_AUTH_SECRET` e `BETTER_AUTH_URL` estão habilitadas para **Production** no projeto da Vercel.
+2. Puxe as variáveis para a máquina e aplique as migrações no banco remoto:
+
+   ```bash
+   vercel env pull .env.development.local
+   npm run db:migrate
+   ```
+
+   Se não usar a CLI da Vercel, copie os valores do painel para `.env.local` e rode `npm run db:migrate`. Sem as tabelas, `/api/auth/*` retorna 500.
+3. Faça um novo deploy para as variáveis chegarem ao runtime.
+4. Abra `GET /api/health`: `database.status` precisa ser `ok`, `provider` deve ser `turso` e `auth.secretConfigured` precisa ser `true`. O endpoint mostra apenas flags — nunca os valores das variáveis.
+
 ## Rotas principais
 
 | Rota | Uso |
@@ -51,10 +67,12 @@ Ao concluir, a escola é salva com um vínculo de administrador para a conta atu
 | `/dashboard/escolas/[id]` | Resumo da escola e módulos do segmento |
 | `/api/auth/[...all]` | Handler do Better Auth |
 | `/api/schools` | `POST` — cria escola, vínculo de admin e slug único |
+| `/api/health` | `GET` — prontidão do banco e flags de configuração (sem segredos) |
 
 ## Estrutura
 
-- `src/lib/db/`: schemas do Better Auth (`auth-schema.ts`), da aplicação (`schema.ts`) e cliente Drizzle.
+- `src/lib/env.ts`: carrega `.env.local`/`.env` também para as ferramentas de CLI.
+- `src/lib/db/`: schemas do Better Auth (`auth-schema.ts`), da aplicação (`schema.ts`) e cliente Drizzle com suporte a Turso.
 - `src/lib/schools/`: catálogo de segmentos/módulos e validação Zod do cadastro.
 - `src/lib/auth.ts` e `src/lib/session.ts`: configuração do Better Auth e checagem de sessão no servidor.
 - `src/components/`: formulário de autenticação, assistente de escola e botão de sair.
@@ -83,4 +101,4 @@ npm run auth:generate  # regenera o schema do Better Auth
 
 ## Segurança
 
-`BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` e `DATABASE_URL` ficam apenas no ambiente (`.env.local`, ignorado pelo Git). Em produção, use um segredo novo, defina a URL pública correta e não habilite o cadastro livre sem uma política de convites.
+`BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `TURSO_DATABASE_URL` e `TURSO_AUTH_TOKEN` ficam apenas no ambiente (`.env.local`/Vercel, ignorados pelo Git). Em produção, use um segredo novo, defina a URL pública correta, habilite as variáveis em Production e não habilite o cadastro livre sem uma política de convites.

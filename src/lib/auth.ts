@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "@/lib/env";
 
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { betterAuth } from "better-auth";
