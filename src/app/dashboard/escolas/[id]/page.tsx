@@ -320,6 +320,26 @@ export default async function SchoolDetailsPage({
       createdAt: item.createdAt.toISOString(),
     }));
 
+  // O professor acompanha apenas as disciplinas dos próprios vínculos.
+  const professorDisciplineScope = new Set<string>();
+  if (role === "professor") {
+    for (const assignment of myTeacherContext?.assignments ?? []) {
+      for (const studentId of assignment.studentIds) {
+        professorDisciplineScope.add(
+          `${studentId}|${assignment.discipline.trim().toLocaleLowerCase("pt-BR")}`,
+        );
+      }
+    }
+  }
+  const scopedAssessmentItems =
+    role === "professor"
+      ? assessmentItems.filter((item) =>
+          professorDisciplineScope.has(
+            `${item.studentId}|${item.discipline.trim().toLocaleLowerCase("pt-BR")}`,
+          ),
+        )
+      : assessmentItems;
+
   const requestItems = requestRows.map(({ request, studentName, requesterName }) => ({
     id: request.id,
     studentId: request.studentId,
@@ -434,7 +454,7 @@ export default async function SchoolDetailsPage({
           teacherName={myTeacherContext?.name ?? session.user.name}
           assignments={myTeacherContext?.assignments ?? []}
           students={studentItems}
-          assessments={assessmentItems}
+          assessments={scopedAssessmentItems}
           occurrences={occurrenceItems}
           rules={rules}
           capabilities={capabilities}

@@ -4,7 +4,12 @@ import { db } from "@/lib/db/client";
 import { students, studentAssessments } from "@/lib/db/schema";
 import { authorizeSchoolRequest, invalidPayload } from "@/lib/schools/api-access";
 import { createAssessmentSchema } from "@/lib/schools/management-validation";
-import { canAccessStudent } from "@/lib/schools/student-scope";
+import {
+  canAccessStudent,
+  canTeacherManageDiscipline,
+  getTeacherDisciplinesForStudent,
+  isDisciplineAllowed,
+} from "@/lib/schools/student-scope";
 
 type Context = { params: Promise<{ id: string; studentId: string }> };
 
@@ -38,7 +43,16 @@ export async function GET(_request: Request, { params }: Context) {
     )
     .orderBy(asc(studentAssessments.createdAt));
 
-  return Response.json({ assessments: rows });
+  const allowedDisciplines =
+    access.role === "professor"
+      ? await getTeacherDisciplinesForStudent(access.session.user.id, id, studentId)
+      : null;
+  const visibleRows =
+    allowedDisciplines === null
+      ? rows
+      : rows.filter((row) => isDisciplineAllowed(row.discipline, allowedDisciplines));
+
+  return Response.json({ assessments: visibleRows });
 }
 
 export async function POST(request: Request, { params }: Context) {
@@ -67,6 +81,21 @@ export async function POST(request: Request, { params }: Context) {
     const issues = parsed.error.flatten();
     const firstIssue = Object.values(issues.fieldErrors).flat()[0];
     return invalidPayload(firstIssue);
+  }
+
+  if (
+    access.role === "professor" &&
+    !(await canTeacherManageDiscipline(
+      access.session.user.id,
+      id,
+      studentId,
+      parsed.data.discipline,
+    ))
+  ) {
+    return Response.json(
+      { error: "Você só pode lançar avaliações das disciplinas atribuídas a você." },
+      { status: 403 },
+    );
   }
 
   const assessmentId = crypto.randomUUID();

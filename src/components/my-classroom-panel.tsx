@@ -81,6 +81,10 @@ function frequencyRate(items: AssessmentItem[]): number | null {
   return (items.filter((item) => item.presence === "presente").length / items.length) * 100;
 }
 
+function sameDiscipline(a: string, b: string) {
+  return a.trim().toLocaleLowerCase("pt-BR") === b.trim().toLocaleLowerCase("pt-BR");
+}
+
 export function MyClassroomPanel({
   schoolId,
   teacherName,
@@ -103,6 +107,28 @@ export function MyClassroomPanel({
   function commitAssessments(next: AssessmentItem[]) {
     setAssessmentOverride({ source: assessments, items: next });
   }
+
+  /** Disciplinas que este professor leciona para o aluno, conforme os vínculos. */
+  function disciplinesForStudent(studentId: string): string[] {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const assignment of assignments) {
+      if (!assignment.studentIds.includes(studentId)) continue;
+      const discipline = assignment.discipline.trim();
+      if (!discipline) continue;
+      const key = discipline.toLocaleLowerCase("pt-BR");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      result.push(discipline);
+    }
+    return result;
+  }
+
+  const visibleItems = items.filter((item) =>
+    disciplinesForStudent(item.studentId).some((discipline) =>
+      sameDiscipline(discipline, item.discipline),
+    ),
+  );
 
   const [occurrenceOverride, setOccurrenceOverride] = useState<{
     source: OccurrenceItem[];
@@ -155,7 +181,7 @@ export function MyClassroomPanel({
   // Avaliações antigas podem referenciar bimestres além do configurado; mantê-los
   // na lista permite visualizar e corrigir esses registros legados.
   const bimesterOptions = Array.from(
-    new Set([...configuredBimesters, ...items.map((item) => item.bimester)]),
+    new Set([...configuredBimesters, ...visibleItems.map((item) => item.bimester)]),
   ).sort((a, b) => a - b);
 
   async function saveAssessment(event: FormEvent, studentId: string) {
@@ -403,7 +429,7 @@ export function MyClassroomPanel({
           </p>
         ) : (
           students.map((student) => {
-            const studentAssessments = items.filter(
+            const studentAssessments = visibleItems.filter(
               (item) => item.studentId === student.id,
             );
             const studentOccurrences = occurrenceItems.filter(
@@ -429,6 +455,13 @@ export function MyClassroomPanel({
                         type="button"
                         className={primaryButton}
                         onClick={() => {
+                          if (openFor !== student.id) {
+                            const allowed = disciplinesForStudent(student.id);
+                            setForm((current) => ({
+                              ...current,
+                              discipline: allowed[0] ?? "",
+                            }));
+                          }
                           setOpenFor(openFor === student.id ? null : student.id);
                           setError("");
                         }}
@@ -522,12 +555,12 @@ export function MyClassroomPanel({
                 )}
 
                 {editingAssessmentId &&
-                  items.some((item) => item.id === editingAssessmentId) && (
+                  visibleItems.some((item) => item.id === editingAssessmentId) && (
                     <form
                       onSubmit={(event) =>
                         saveEdit(
                           event,
-                          items.find((item) => item.id === editingAssessmentId)!,
+                          visibleItems.find((item) => item.id === editingAssessmentId)!,
                         )
                       }
                       className="mt-3 grid gap-3 rounded-lg bg-amber-50 p-3 sm:grid-cols-3"
@@ -544,13 +577,19 @@ export function MyClassroomPanel({
                       </label>
                       <label className="block">
                         <span className="text-xs font-semibold text-slate-600">Disciplina</span>
-                        <input
+                        <select
                           value={editForm.discipline}
                           onChange={(event) =>
                             setEditForm((c) => ({ ...c, discipline: event.target.value }))
                           }
                           className={inputClass}
-                        />
+                        >
+                          {disciplinesForStudent(student.id).map((discipline) => (
+                            <option key={discipline} value={discipline}>
+                              {discipline}
+                            </option>
+                          ))}
+                        </select>
                       </label>
                       <label className="block">
                         <span className="text-xs font-semibold text-slate-600">Nota</span>
@@ -632,13 +671,19 @@ export function MyClassroomPanel({
                   >
                     <label className="block">
                       <span className="text-xs font-semibold text-slate-600">Disciplina</span>
-                      <input
+                      <select
                         value={form.discipline}
                         onChange={(event) =>
                           setForm((c) => ({ ...c, discipline: event.target.value }))
                         }
                         className={inputClass}
-                      />
+                      >
+                        {disciplinesForStudent(student.id).map((discipline) => (
+                          <option key={discipline} value={discipline}>
+                            {discipline}
+                          </option>
+                        ))}
+                      </select>
                     </label>
                     <label className="block">
                       <span className="text-xs font-semibold text-slate-600">Avaliação</span>
@@ -897,9 +942,9 @@ export function MyClassroomPanel({
                 </tr>
               ) : (
                 students.map((student) => {
-                  const average = weightedAverage(bimesterAssessmentsFor(items, student.id, bimester));
+                  const average = weightedAverage(bimesterAssessmentsFor(visibleItems, student.id, bimester));
                   const frequency = frequencyRate(
-                    bimesterAssessmentsFor(items, student.id, bimester),
+                    bimesterAssessmentsFor(visibleItems, student.id, bimester),
                   );
                   const approved = average !== null && average >= rules.passingGrade;
 
@@ -907,7 +952,7 @@ export function MyClassroomPanel({
                     <tr key={student.id}>
                       <td className="px-3 py-2 font-medium">{student.name}</td>
                       <td className="px-3 py-2">
-                        {bimesterAssessmentsFor(items, student.id, bimester).length}
+                        {bimesterAssessmentsFor(visibleItems, student.id, bimester).length}
                       </td>
                       <td className="px-3 py-2 font-semibold">
                         {average === null ? "—" : average.toFixed(1)}

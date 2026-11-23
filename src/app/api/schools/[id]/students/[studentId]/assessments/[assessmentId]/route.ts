@@ -4,7 +4,7 @@ import { db } from "@/lib/db/client";
 import { studentAssessments, students } from "@/lib/db/schema";
 import { authorizeSchoolRequest, invalidPayload } from "@/lib/schools/api-access";
 import { updateAssessmentSchema } from "@/lib/schools/management-validation";
-import { canAccessStudent } from "@/lib/schools/student-scope";
+import { canAccessStudent, canTeacherManageDiscipline } from "@/lib/schools/student-scope";
 
 type Context = {
   params: Promise<{ id: string; studentId: string; assessmentId: string }>;
@@ -36,6 +36,33 @@ async function findStudent(schoolId: string, studentId: string) {
   return student ?? null;
 }
 
+async function checkDisciplineScope(
+  role: string | null,
+  userId: string,
+  schoolId: string,
+  studentId: string,
+  disciplines: string[],
+) {
+  if (role !== "professor") return null;
+
+  for (const discipline of disciplines.filter(Boolean)) {
+    const allowed = await canTeacherManageDiscipline(
+      userId,
+      schoolId,
+      studentId,
+      discipline,
+    );
+    if (!allowed) {
+      return Response.json(
+        { error: "Você só pode mexer nas avaliações das disciplinas atribuídas a você." },
+        { status: 403 },
+      );
+    }
+  }
+
+  return null;
+}
+
 export async function PATCH(request: Request, { params }: Context) {
   const { id, studentId, assessmentId } = await params;
   const access = await authorizeSchoolRequest(id, "grade:update");
@@ -64,6 +91,15 @@ export async function PATCH(request: Request, { params }: Context) {
     return invalidPayload(firstIssue);
   }
 
+  const scopeError = await checkDisciplineScope(
+    access.role,
+    access.session.user.id,
+    id,
+    studentId,
+    [assessment.discipline, parsed.data.discipline ?? ""],
+  );
+  if (scopeError) return scopeError;
+
   await db
     .update(studentAssessments)
     .set({ ...parsed.data, updatedAt: new Date() })
@@ -90,6 +126,15 @@ export async function DELETE(_request: Request, { params }: Context) {
   if (!(await canAccessStudent(access.session.user.id, id, student, access.role))) {
     return Response.json({ error: "Você não tem acesso a este aluno." }, { status: 403 });
   }
+
+  const scopeError = await checkDisciplineScope(
+    access.role,
+    access.session.user.id,
+    id,
+    studentId,
+    [assessment.discipline],
+  );
+  if (scopeError) return scopeError;
 
   await db
     .delete(studentAssessments)

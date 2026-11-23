@@ -32,6 +32,15 @@ export type TeacherContext = {
   legacy: boolean;
 };
 
+function normalizeDiscipline(discipline: string) {
+  return discipline.trim().toLocaleLowerCase("pt-BR");
+}
+
+export function isDisciplineAllowed(discipline: string, allowed: string[]) {
+  const target = normalizeDiscipline(discipline);
+  return allowed.some((item) => normalizeDiscipline(item) === target);
+}
+
 async function findTeacher(userId: string, schoolId: string) {
   const [teacher] = await db
     .select()
@@ -164,4 +173,68 @@ export async function getTeacherContext(
         .map((link) => link.studentId),
     })),
   };
+}
+
+/**
+ * Disciplinas que o professor leciona para um aluno específico.
+ * Um professor pode ter várias salas/disciplinas, mas só deve lançar nota,
+ * frequência e ocorrências das disciplinas às quais está vinculado.
+ */
+export async function getTeacherDisciplinesForStudent(
+  userId: string,
+  schoolId: string,
+  studentId: string,
+): Promise<string[]> {
+  const teacher = await findTeacher(userId, schoolId);
+  if (!teacher) return [];
+
+  const assignmentRows = await db
+    .select({
+      id: teacherAssignments.id,
+      discipline: teacherAssignments.discipline,
+    })
+    .from(teacherAssignments)
+    .where(eq(teacherAssignments.teacherId, teacher.id));
+
+  if (assignmentRows.length === 0) {
+    // Professores anteriores aos vínculos múltiplos usam apenas a sala legada.
+    const [student] = await db
+      .select({ classroomId: students.classroomId })
+      .from(students)
+      .where(and(eq(students.id, studentId), eq(students.schoolId, schoolId)))
+      .limit(1);
+
+    if (!student || !teacher.classroomId || teacher.classroomId !== student.classroomId) {
+      return [];
+    }
+    return teacher.discipline ? [teacher.discipline] : [];
+  }
+
+  const links = await db
+    .select({ assignmentId: teacherStudents.assignmentId })
+    .from(teacherStudents)
+    .where(
+      and(
+        inArray(
+          teacherStudents.assignmentId,
+          assignmentRows.map((row) => row.id),
+        ),
+        eq(teacherStudents.studentId, studentId),
+      ),
+    );
+
+  const linkedIds = new Set(links.map((link) => link.assignmentId));
+  return assignmentRows
+    .filter((row) => linkedIds.has(row.id) && row.discipline.trim())
+    .map((row) => row.discipline);
+}
+
+export async function canTeacherManageDiscipline(
+  userId: string,
+  schoolId: string,
+  studentId: string,
+  discipline: string,
+): Promise<boolean> {
+  const allowed = await getTeacherDisciplinesForStudent(userId, schoolId, studentId);
+  return isDisciplineAllowed(discipline, allowed);
 }
