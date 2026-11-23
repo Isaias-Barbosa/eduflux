@@ -302,6 +302,30 @@ export function SchoolManagement({
     router.refresh();
   }
 
+  async function removeClassroom(classroomId: string, name: string) {
+    if (!window.confirm(`Remover a turma ${name}?`)) return;
+    const data = await send(
+      `/api/schools/${schoolId}/classrooms/${classroomId}`,
+      {},
+      "DELETE",
+    );
+    if (!data) return;
+    setNotice(`Turma ${name} removida.`);
+    router.refresh();
+  }
+
+  async function removePhysicalRoom(roomId: string, name: string) {
+    if (!window.confirm(`Remover a sala física ${name}?`)) return;
+    const data = await send(
+      `/api/schools/${schoolId}/physical-rooms/${roomId}`,
+      {},
+      "DELETE",
+    );
+    if (!data) return;
+    setNotice(`Sala física ${name} removida.`);
+    router.refresh();
+  }
+
   function setAssignment(index: number, patch: Partial<AssignmentForm>) {
     setTeacherForm((current) => ({
       ...current,
@@ -728,9 +752,21 @@ export function SchoolManagement({
                         {classroom.physicalRoomName ? ` · ${classroom.physicalRoomName}` : " · sem sala física"}
                       </p>
                     </div>
-                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${classroom.status === "aberta" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
-                      {classroom.status}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${classroom.status === "aberta" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
+                        {classroom.status}
+                      </span>
+                      {capabilities.manageSchool && (
+                        <button
+                          type="button"
+                          onClick={() => removeClassroom(classroom.id, classroom.name)}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-200 text-red-600 transition hover:bg-red-50"
+                          aria-label={`Remover turma ${classroom.name}`}
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -741,10 +777,24 @@ export function SchoolManagement({
             <div className="mt-3 space-y-3">
               {physicalRooms.length === 0 ? <p className="text-sm text-slate-500">Nenhuma sala física cadastrada.</p> : physicalRooms.map((room) => (
                 <div key={room.id} className="rounded-xl border border-slate-200 p-4">
-                  <p className="text-sm font-semibold text-slate-800">{room.name}</p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    {room.capacity} cadeiras{room.squareMeters ? ` · ${room.squareMeters} m²` : ""} · {room.classroomCount} turma(s) vinculada(s)
-                  </p>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">{room.name}</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {room.capacity} cadeiras{room.squareMeters ? ` · ${room.squareMeters} m²` : ""} · {room.classroomCount} turma(s) vinculada(s)
+                      </p>
+                    </div>
+                    {capabilities.manageSchool && (
+                      <button
+                        type="button"
+                        onClick={() => removePhysicalRoom(room.id, room.name)}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-200 text-red-600 transition hover:bg-red-50"
+                        aria-label={`Remover sala física ${room.name}`}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
