@@ -208,7 +208,12 @@ export function MembersPanel({ schoolId, members }: Props) {
             </div>
             <div className="flex items-center gap-2">
               {member.role === "owner" ? (
-                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">Criador</span>
+                <span
+                  title="O acesso do criador é permanente nesta escola e não pode ser alterado ou removido."
+                  className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600"
+                >
+                  Criador
+                </span>
               ) : (
                 <>
                   <select

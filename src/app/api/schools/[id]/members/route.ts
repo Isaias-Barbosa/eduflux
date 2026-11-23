@@ -126,6 +126,12 @@ export async function PATCH(request: Request, { params }: Context) {
     return Response.json({ error: "Vínculo não encontrado." }, { status: 404 });
   }
 
+  // O vínculo do criador é permanente nesta escola: não pode ser rebaixado
+  // pela API, mesmo que a interface não ofereça essa ação.
+  if (membership.role === "owner") {
+    return invalidPayload("O perfil do criador não pode ser alterado.");
+  }
+
   await db
     .update(schoolMembers)
     .set({ role: parsed.data.role })
