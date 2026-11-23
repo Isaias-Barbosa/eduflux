@@ -6,7 +6,8 @@ import type { ReactNode } from "react";
 import { LogoutButton } from "@/components/logout-button";
 import { db } from "@/lib/db/client";
 import { schoolMembers } from "@/lib/db/schema";
-import { isPlatformCreator } from "@/lib/schools/access";
+import { isPlatformCreator } from "@/lib/schools/creator";
+import { getSchoolRole, ROLE_LABELS } from "@/lib/schools/permissions";
 import { requireUser } from "@/lib/session";
 
 export const instant = false;
@@ -15,19 +16,19 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   const session = await requireUser();
   const creator = await isPlatformCreator(session.user.id);
 
-  const [membership] = creator
-    ? []
-    : await db
-        .select({ role: schoolMembers.role })
-        .from(schoolMembers)
-        .where(eq(schoolMembers.userId, session.user.id))
-        .limit(1);
+  let roleLabel = "Criador";
+  if (!creator) {
+    const rows = await db
+      .select({ schoolId: schoolMembers.schoolId })
+      .from(schoolMembers)
+      .where(eq(schoolMembers.userId, session.user.id))
+      .limit(1);
 
-  const roleLabel = creator
-    ? "Criador"
-    : membership?.role === "professor"
-      ? "Professor"
-      : "Administrador da escola";
+    const role = rows[0]
+      ? await getSchoolRole(session.user.id, rows[0].schoolId)
+      : null;
+    roleLabel = role ? ROLE_LABELS[role] : "Usuário";
+  }
 
   const initials = session.user.name
     .split(" ")

@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   index,
   integer,
+  real,
   sqliteTable,
   text,
   uniqueIndex,
@@ -78,7 +79,15 @@ export const schoolMembers = sqliteTable(
       .references(() => schools.id, { onDelete: "cascade" }),
     userId: text("user_id").notNull(),
     role: text("role", {
-      enum: ["owner", "admin", "secretaria", "professor"],
+      enum: [
+        "owner",
+        "admin",
+        "secretaria",
+        "auxiliar",
+        "direcao",
+        "professor",
+        "responsavel",
+      ],
     })
       .notNull()
       .default("admin"),
@@ -143,7 +152,32 @@ export const teachers = sqliteTable(
   ],
 );
 
-/** Alunos matriculados. A contagem do dashboard considera apenas ativos. */
+/**
+ * Sequência anual de matrículas por escola. Garante números de registro únicos
+ * mesmo quando a secretaria cadastra alunos em paralelo.
+ */
+export const enrollmentSequences = sqliteTable(
+  "enrollment_sequences",
+  {
+    id: text("id").primaryKey(),
+    schoolId: text("school_id")
+      .notNull()
+      .references(() => schools.id, { onDelete: "cascade" }),
+    year: integer("year").notNull(),
+    lastNumber: integer("last_number").notNull().default(0),
+  },
+  (table) => [
+    uniqueIndex("enrollment_sequences_school_year_idx").on(
+      table.schoolId,
+      table.year,
+    ),
+  ],
+);
+
+/**
+ * Alunos matriculados. A contagem do dashboard considera apenas ativos.
+ * Os campos seguem o cadastro do Censo Escolar/INEP.
+ */
 export const students = sqliteTable(
   "students",
   {
@@ -154,20 +188,154 @@ export const students = sqliteTable(
     classroomId: text("classroom_id").references(() => classrooms.id, {
       onDelete: "set null",
     }),
+    guardianUserId: text("guardian_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
     name: text("name").notNull(),
-    status: text("status", { enum: ["ativo", "inativo"] })
+    enrollmentNumber: text("enrollment_number"),
+    birthDate: text("birth_date"),
+    cpf: text("cpf"),
+    sex: text("sex", {
+      enum: ["feminino", "masculino", "outro", "nao_informado"],
+    }),
+    birthCity: text("birth_city"),
+    birthState: text("birth_state"),
+    raceColor: text("race_color", {
+      enum: ["branca", "preta", "parda", "amarela", "indigena", "nao_informado"],
+    }),
+    motherName: text("mother_name"),
+    fatherName: text("father_name"),
+    guardianName: text("guardian_name"),
+    guardianCpf: text("guardian_cpf"),
+    emergencyPhone: text("emergency_phone"),
+    emergencyPhone2: text("emergency_phone_2"),
+    zipCode: text("zip_code"),
+    street: text("street"),
+    number: text("number"),
+    complement: text("complement"),
+    neighborhood: text("neighborhood"),
+    city: text("city"),
+    state: text("state"),
+    grade: text("grade"),
+    shift: text("shift"),
+    status: text("status", {
+      enum: ["ativo", "transferido", "concluido"],
+    })
       .notNull()
       .default("ativo"),
+    birthCertificateStatus: text("birth_certificate_status", {
+      enum: ["pendente", "validado"],
+    })
+      .notNull()
+      .default("pendente"),
+    schoolHistoryStatus: text("school_history_status", {
+      enum: ["pendente", "validado"],
+    })
+      .notNull()
+      .default("pendente"),
+    residenceProofStatus: text("residence_proof_status", {
+      enum: ["pendente", "validado"],
+    })
+      .notNull()
+      .default("pendente"),
+    docsStatus: text("docs_status", {
+      enum: ["pendente", "validado"],
+    })
+      .notNull()
+      .default("pendente"),
+    docsValidatedBy: text("docs_validated_by"),
+    docsValidatedAt: integer("docs_validated_at", { mode: "timestamp_ms" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
   },
   (table) => [
     index("students_school_id_idx").on(table.schoolId),
     index("students_classroom_id_idx").on(table.classroomId),
+    index("students_guardian_user_id_idx").on(table.guardianUserId),
+    uniqueIndex("students_school_enrollment_idx").on(
+      table.schoolId,
+      table.enrollmentNumber,
+    ),
+  ],
+);
+
+/** Solicitações de alteração cadastral feitas pelo responsável/aluno. */
+export const studentUpdateRequests = sqliteTable(
+  "student_update_requests",
+  {
+    id: text("id").primaryKey(),
+    schoolId: text("school_id")
+      .notNull()
+      .references(() => schools.id, { onDelete: "cascade" }),
+    studentId: text("student_id")
+      .notNull()
+      .references(() => students.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    status: text("status", {
+      enum: ["pendente", "aprovado", "rejeitado"],
+    })
+      .notNull()
+      .default("pendente"),
+    payload: text("payload").notNull(),
+    note: text("note"),
+    reviewNote: text("review_note"),
+    reviewedBy: text("reviewed_by"),
+    reviewedAt: integer("reviewed_at", { mode: "timestamp_ms" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    index("student_update_requests_school_id_idx").on(table.schoolId),
+    index("student_update_requests_student_id_idx").on(table.studentId),
+    index("student_update_requests_user_id_idx").on(table.userId),
+  ],
+);
+
+/** Notas e frequência lançadas pelo professor da turma. */
+export const studentAssessments = sqliteTable(
+  "student_assessments",
+  {
+    id: text("id").primaryKey(),
+    schoolId: text("school_id")
+      .notNull()
+      .references(() => schools.id, { onDelete: "cascade" }),
+    studentId: text("student_id")
+      .notNull()
+      .references(() => students.id, { onDelete: "cascade" }),
+    discipline: text("discipline").notNull(),
+    assessment: text("assessment").notNull(),
+    grade: real("grade").notNull(),
+    presence: text("presence", { enum: ["presente", "falta"] })
+      .notNull()
+      .default("presente"),
+    recordedBy: text("recorded_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    index("student_assessments_school_id_idx").on(table.schoolId),
+    index("student_assessments_student_id_idx").on(table.studentId),
   ],
 );
 
 export type School = typeof schools.$inferSelect;
 export type NewSchool = typeof schools.$inferInsert;
 export type SchoolMember = typeof schoolMembers.$inferSelect;
+export type Student = typeof students.$inferSelect;
+export type StudentUpdateRequest = typeof studentUpdateRequests.$inferSelect;

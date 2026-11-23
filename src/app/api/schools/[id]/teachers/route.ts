@@ -13,7 +13,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const access = await authorizeSchoolRequest(id);
+  const access = await authorizeSchoolRequest(id, "teacher:create");
   if (access.error) return access.error;
 
   const payload = await request.json().catch(() => null);

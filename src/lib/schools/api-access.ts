@@ -1,9 +1,12 @@
 import { headers } from "next/headers";
 
 import { auth } from "@/lib/auth";
-import { canManageSchool } from "./access";
+import { getSchoolRole, hasPermission, type Permission } from "./permissions";
 
-export async function authorizeSchoolRequest(schoolId: string) {
+export async function authorizeSchoolRequest(
+  schoolId: string,
+  permission: Permission,
+) {
   const session = await auth.api.getSession({ headers: await headers() });
 
   if (!session) {
@@ -15,16 +18,18 @@ export async function authorizeSchoolRequest(schoolId: string) {
     };
   }
 
-  if (!(await canManageSchool(session.user.id, schoolId))) {
+  if (!(await hasPermission(session.user.id, schoolId, permission))) {
     return {
       error: Response.json(
-        { error: "Você não tem acesso a esta escola." },
+        { error: "Você não tem permissão para esta operação." },
         { status: 403 },
       ),
     };
   }
 
-  return { session };
+  const role = await getSchoolRole(session.user.id, schoolId);
+
+  return { session, role };
 }
 
 export function invalidPayload(error?: string) {

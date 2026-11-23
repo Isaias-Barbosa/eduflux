@@ -1,67 +1,26 @@
-import { and, eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 
-import { db } from "@/lib/db/client";
-import { schools, schoolMembers } from "@/lib/db/schema";
 import { requireUser } from "@/lib/session";
+import { isPlatformCreator } from "./creator";
+import { getSchoolRole } from "./permissions";
 
-/**
- * Criadores são os usuários que possuem pelo menos uma escola.
- * Quando ainda não existe nenhuma escola, o primeiro usuário autenticado pode
- * fazer a configuração inicial (bootstrap).
- */
-export async function isPlatformCreator(userId: string): Promise<boolean> {
-  const owned = await db
-    .select({ id: schools.id })
-    .from(schools)
-    .where(eq(schools.ownerId, userId))
-    .limit(1);
-
-  if (owned.length > 0) return true;
-
-  const anySchool = await db.select({ id: schools.id }).from(schools).limit(1);
-  return anySchool.length === 0;
-}
+export { isPlatformCreator } from "./creator";
 
 export async function canAccessSchool(
   userId: string,
   schoolId: string,
 ): Promise<boolean> {
-  if (await isPlatformCreator(userId)) return true;
-
-  const membership = await db
-    .select({ id: schoolMembers.id })
-    .from(schoolMembers)
-    .where(
-      and(
-        eq(schoolMembers.userId, userId),
-        eq(schoolMembers.schoolId, schoolId),
-      ),
-    )
-    .limit(1);
-
-  return membership.length > 0;
+  return (await getSchoolRole(userId, schoolId)) !== null;
 }
 
-/** Gerenciam a escola o criador e o administrador vinculado a ela. */
+/** Mantido para compatibilidade com as rotas que ainda verificam gestão ampla. */
 export async function canManageSchool(
   userId: string,
   schoolId: string,
 ): Promise<boolean> {
   if (await isPlatformCreator(userId)) return true;
-
-  const membership = await db
-    .select({ role: schoolMembers.role })
-    .from(schoolMembers)
-    .where(
-      and(
-        eq(schoolMembers.userId, userId),
-        eq(schoolMembers.schoolId, schoolId),
-      ),
-    )
-    .limit(1);
-
-  return membership[0]?.role === "admin" || membership[0]?.role === "owner";
+  const role = await getSchoolRole(userId, schoolId);
+  return role === "admin" || role === "owner";
 }
 
 export async function requireCreator() {
