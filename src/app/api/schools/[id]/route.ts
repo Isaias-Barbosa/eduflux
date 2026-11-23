@@ -45,6 +45,8 @@ export async function PATCH(request: Request, { params }: Context) {
   await db
     .update(schools)
     .set({
+      administrativeDependency: data.administrativeDependency,
+      maintainerName: data.maintainerName || null,
       directorName: data.directorName,
       directorEmail: data.directorEmail || null,
       directorPhone: data.directorPhone || null,

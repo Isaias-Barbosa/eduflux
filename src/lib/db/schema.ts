@@ -27,6 +27,12 @@ export const schools = sqliteTable(
     segment: text("segment", {
       enum: ["infantil", "fundamental", "medio"],
     }).$type<SchoolSegment>().notNull(),
+    administrativeDependency: text("administrative_dependency", {
+      enum: ["publica", "privada"],
+    })
+      .notNull()
+      .default("privada"),
+    maintainerName: text("maintainer_name"),
     cnpj: text("cnpj"),
     inepCode: text("inep_code"),
     foundedYear: integer("founded_year"),

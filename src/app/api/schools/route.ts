@@ -94,6 +94,8 @@ export async function POST(request: Request) {
       legalName: data.legalName || null,
       slug,
       segment: data.segment,
+      administrativeDependency: data.administrativeDependency,
+      maintainerName: data.maintainerName || null,
       cnpj: data.cnpj || null,
       inepCode: data.inepCode || null,
       foundedYear: data.foundedYear ? Number(data.foundedYear) : null,

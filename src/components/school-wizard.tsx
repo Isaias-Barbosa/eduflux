@@ -32,6 +32,8 @@ const segmentIcons: Record<SchoolSegment, LucideIcon> = {
 
 type FormFields = {
   segment: SchoolSegment | "";
+  administrativeDependency: "publica" | "privada" | "";
+  maintainerName: string;
   name: string;
   legalName: string;
   cnpj: string;
@@ -52,6 +54,8 @@ type FormFields = {
 
 const initialFields: FormFields = {
   segment: "",
+  administrativeDependency: "",
+  maintainerName: "",
   name: "",
   legalName: "",
   cnpj: "",
@@ -180,6 +184,9 @@ export function SchoolWizard() {
       return "Selecione o tipo de ensino da instituição.";
     }
     if (step === 1) {
+      if (!fields.administrativeDependency) {
+        return "Selecione se a escola é pública ou privada.";
+      }
       const required: (keyof FormFields)[] = [
         "name",
         "zipCode",
@@ -285,7 +292,12 @@ export function SchoolWizard() {
   }
 
   const segment = fields.segment ? SEGMENTS[fields.segment] : null;
-  const modules = fields.segment ? getModules(fields.segment) : [];
+  const modules = fields.segment
+    ? getModules(
+        fields.segment,
+        fields.administrativeDependency || undefined,
+      )
+    : [];
   const cepHint =
     cepStatus === "loading"
       ? "Buscando endereço..."
@@ -468,6 +480,72 @@ export function SchoolWizard() {
             </p>
 
             <div className="mt-6 space-y-4">
+              <fieldset>
+                <legend className="text-sm font-medium text-slate-700">
+                  Dependência administrativa
+                  <span className="ml-0.5 text-emerald-600">*</span>
+                </legend>
+                <p className="mt-1 text-xs text-slate-500">
+                  Define a estrutura, módulos e validações da escola.
+                </p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  {([
+                    {
+                      id: "publica" as const,
+                      label: "Pública",
+                      description:
+                        "Mantida por Prefeitura/Secretaria. Sem mensalidades; foco em Censo, transporte, merenda e programas sociais.",
+                    },
+                    {
+                      id: "privada" as const,
+                      label: "Privada",
+                      description:
+                        "Mantida por empresa/grupo (CNPJ). Habilita financeiro, contratos, responsáveis financeiro/pedagógico e RH.",
+                    },
+                  ]).map((option) => {
+                    const selected =
+                      fields.administrativeDependency === option.id;
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() =>
+                          update("administrativeDependency", option.id)
+                        }
+                        className={`rounded-xl border p-4 text-left transition ${
+                          selected
+                            ? "border-emerald-500 bg-emerald-50 ring-2 ring-emerald-100"
+                            : "border-slate-200 bg-white hover:border-emerald-300"
+                        }`}
+                      >
+                        <span className="block text-sm font-semibold text-slate-900">
+                          {option.label}
+                        </span>
+                        <span className="mt-1 block text-xs leading-5 text-slate-500">
+                          {option.description}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </fieldset>
+
+              <Field
+                label={
+                  fields.administrativeDependency === "publica"
+                    ? "Mantenedora / Secretaria de Educação"
+                    : "Mantenedora / Rede / Grupo educacional"
+                }
+                value={fields.maintainerName}
+                onChange={(value) => update("maintainerName", value)}
+                placeholder={
+                  fields.administrativeDependency === "publica"
+                    ? "Prefeitura Municipal de ..."
+                    : "Grupo Educacional ..."
+                }
+                hint="Opcional. Representa a mantenedora/rede (tenant) da escola."
+              />
+
               <Field
                 label="Nome da escola"
                 value={fields.name}
@@ -650,6 +728,22 @@ export function SchoolWizard() {
                   <dt className="text-xs text-slate-500">Tipo de ensino</dt>
                   <dd className="mt-0.5 font-medium text-slate-800">
                     {segment?.label}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-slate-500">Dependência administrativa</dt>
+                  <dd className="mt-0.5 font-medium text-slate-800">
+                    {fields.administrativeDependency === "publica"
+                      ? "Pública"
+                      : fields.administrativeDependency === "privada"
+                        ? "Privada"
+                        : "—"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-slate-500">Mantenedora / Rede</dt>
+                  <dd className="mt-0.5 font-medium text-slate-800">
+                    {fields.maintainerName || "—"}
                   </dd>
                 </div>
                 <div>

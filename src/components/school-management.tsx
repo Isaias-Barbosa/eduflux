@@ -203,7 +203,7 @@ export function SchoolManagement({
   const [saving, setSaving] = useState<string | null>(null);
   const [temporaryPassword, setTemporaryPassword] = useState("");
 
-  const moduleOptions = getModules(segment);
+  const moduleOptions = getModules(segment, profileForm.administrativeDependency);
   const studentsById = new Map(initial.students.map((item) => [item.id, item]));
 
   async function send(
@@ -499,57 +499,109 @@ export function SchoolManagement({
         </p>
       )}
 
+      {capabilities.manageMembers && (
+        <MembersPanel schoolId={schoolId} members={initial.members} />
+      )}
+
       {capabilities.manageSchool && (
         <section className="rounded-2xl border border-slate-200 bg-white p-6">
           <h2 className="text-base font-semibold text-slate-900">
             Equipe e infraestrutura
           </h2>
           <p className="mt-1 text-sm text-slate-500">
-            Estes dados são preenchidos pelo administrador da escola.
+            Configure a identidade administrativa da escola e vincule a liderança à equipe cadastrada.
           </p>
 
           <form onSubmit={saveProfile} className="mt-5 space-y-5">
             <div className="grid gap-4 sm:grid-cols-2">
+              <label className="block">
+                <span className="text-sm font-medium text-slate-700">Dependência administrativa</span>
+                <select
+                  value={profileForm.administrativeDependency}
+                  onChange={(e) => updateProfile("administrativeDependency", e.target.value as "publica" | "privada")}
+                  className={inputClass}
+                >
+                  <option value="publica">Pública (Prefeitura/Secretaria)</option>
+                  <option value="privada">Privada (Empresa/Grupo educacional)</option>
+                </select>
+              </label>
               <Input
-                label="Diretora Geral"
-                value={profileForm.directorName}
-                onChange={(value) => updateProfile("directorName", value)}
-                placeholder="Maria da Silva"
+                label={profileForm.administrativeDependency === "publica" ? "Mantenedora / Secretaria de Educação" : "Mantenedora / Rede / Grupo"}
+                value={profileForm.maintainerName}
+                onChange={(value) => updateProfile("maintainerName", value)}
+                placeholder={profileForm.administrativeDependency === "publica" ? "Prefeitura Municipal de ..." : "Grupo Educacional ..."}
               />
-              <Input
-                label="Coordenador Pedagógico"
-                value={profileForm.pedagogicalCoordinator}
-                onChange={(value) =>
-                  updateProfile("pedagogicalCoordinator", value)
-                }
-                placeholder="Ana Souza"
-              />
-              <Input
-                label="Secretaria Escolar"
-                value={profileForm.secretaryName}
-                onChange={(value) => updateProfile("secretaryName", value)}
-                placeholder="Carla Lima"
-              />
-              <Input
-                label="E-mail da direção"
-                value={profileForm.directorEmail}
-                onChange={(value) => updateProfile("directorEmail", value)}
-                placeholder="direcao@escola.com.br"
-                type="email"
-              />
-              <Input
-                label="Telefone da direção"
-                value={profileForm.directorPhone}
-                onChange={(value) => updateProfile("directorPhone", value)}
-                placeholder="(11) 90000-0000"
-              />
-              <Input
-                label="Salas de aula"
-                value={profileForm.classrooms}
-                onChange={(value) => updateProfile("classrooms", value)}
-                placeholder="12"
-                type="number"
-              />
+            </div>
+
+            <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-4">
+              <p className="text-sm font-semibold text-slate-800">Liderança (puxada da equipe)</p>
+              <p className="mt-1 text-xs text-slate-500">
+                Cadastre os usuários em “Equipe e permissões” acima. Depois selecione quem ocupa cada função.
+              </p>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                {([
+                  {
+                    key: "directorName" as const,
+                    label: "Diretora Geral / Diretor",
+                    roles: ["direcao", "admin", "owner"],
+                    placeholder: "Selecione na equipe",
+                  },
+                  {
+                    key: "pedagogicalCoordinator" as const,
+                    label: "Coordenador Pedagógico",
+                    roles: ["direcao", "admin"],
+                    placeholder: "Selecione na equipe",
+                  },
+                  {
+                    key: "secretaryName" as const,
+                    label: "Secretaria Escolar",
+                    roles: ["secretaria", "admin"],
+                    placeholder: "Selecione na equipe",
+                  },
+                ]).map((field) => {
+                  const options = initial.members.filter((m) => field.roles.includes(m.role));
+                  const current = profileForm[field.key];
+                  const hasCurrent = current && !options.some((m) => m.name === current);
+                  return (
+                    <label key={field.key} className="block">
+                      <span className="text-sm font-medium text-slate-700">{field.label}</span>
+                      <select
+                        value={current}
+                        onChange={(e) => updateProfile(field.key, e.target.value)}
+                        className={inputClass}
+                      >
+                        <option value="">{field.placeholder}</option>
+                        {hasCurrent && <option value={current}>{current} (atual)</option>}
+                        {options.map((m) => (
+                          <option key={m.id} value={m.name}>
+                            {m.name} — {m.role}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  );
+                })}
+                <Input
+                  label="E-mail da direção"
+                  value={profileForm.directorEmail}
+                  onChange={(value) => updateProfile("directorEmail", value)}
+                  placeholder="direcao@escola.com.br"
+                  type="email"
+                />
+                <Input
+                  label="Telefone da direção"
+                  value={profileForm.directorPhone}
+                  onChange={(value) => updateProfile("directorPhone", value)}
+                  placeholder="(11) 90000-0000"
+                />
+                <Input
+                  label="Salas de aula (estimativa)"
+                  value={profileForm.classrooms}
+                  onChange={(value) => updateProfile("classrooms", value)}
+                  placeholder="12"
+                  type="number"
+                />
+              </div>
             </div>
 
             <CheckGroup
@@ -1107,10 +1159,6 @@ export function SchoolManagement({
         students={initial.students}
         capabilities={capabilities}
       />
-
-      {capabilities.manageMembers && (
-        <MembersPanel schoolId={schoolId} members={initial.members} />
-      )}
 
       {capabilities.reviewRequests && (
         <UpdateRequestsPanel schoolId={schoolId} requests={initial.requests} />

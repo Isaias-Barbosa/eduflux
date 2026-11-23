@@ -50,6 +50,13 @@
       "when": 1795448609087,
       "tag": "0006_slippery_red_hulk",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1795455115892,
+      "tag": "0007_oval_tyger_tiger",
+      "breakpoints": true
     }
   ]
 }

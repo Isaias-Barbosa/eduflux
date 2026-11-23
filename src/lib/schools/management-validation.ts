@@ -328,6 +328,8 @@ export const reviewUpdateRequestSchema = z.object({
 });
 
 export const updateSchoolProfileSchema = z.object({
+  administrativeDependency: z.enum(["publica", "privada"]).default("privada"),
+  maintainerName: optionalText(160),
   directorName: optionalText(120),
   directorEmail: z
     .union([z.literal(""), z.string().trim().email("E-mail inválido")])

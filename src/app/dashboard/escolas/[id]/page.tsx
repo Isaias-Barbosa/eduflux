@@ -258,7 +258,7 @@ export default async function SchoolDetailsPage({
       : null;
 
   const segment = SEGMENTS[school.segment];
-  const modules = getModules(school.segment);
+  const modules = getModules(school.segment, school.administrativeDependency);
   const rules: SchoolRules = {
     passingGrade: school.passingGrade,
     bimesters: school.bimesters,
@@ -444,28 +444,37 @@ export default async function SchoolDetailsPage({
         Voltar para minhas escolas
       </Link>
 
-      <div className="flex flex-col justify-between gap-4 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-6 sm:flex-row sm:items-center">
-        <div>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-3 py-1 text-xs font-semibold text-white">
-            <BadgeCheck className="size-3.5" />
-            Configuração concluída
-          </span>
-          <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-900">
-            {school.name}
-          </h1>
-          <p className="mt-1 text-sm text-emerald-800">
-            Segmento: {segment.label} · {segment.audience}
-          </p>
-        </div>
-        <div className="flex flex-col items-start gap-2 sm:items-end">
-          <span className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs font-medium text-emerald-700">
-            Identificador: {school.slug}
-          </span>
-          {role && (
-            <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600">
-              {ROLE_LABELS[role]}
+      <div className="relative overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-emerald-50/40 to-slate-50 p-6 shadow-sm sm:p-8">
+        <div className="absolute -right-8 -top-8 size-32 rounded-full bg-emerald-100/50 blur-2xl" />
+        <div className="relative flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`rounded-full px-3 py-1 text-xs font-semibold ${school.administrativeDependency === "publica" ? "bg-sky-100 text-sky-800" : "bg-violet-100 text-violet-800"}`}>
+                {school.administrativeDependency === "publica" ? "Escola pública" : "Escola privada"}
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-3 py-1 text-xs font-semibold text-white">
+                <BadgeCheck className="size-3.5" />
+                Configuração concluída
+              </span>
+            </div>
+            <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+              {school.name}
+            </h1>
+            <p className="mt-1 text-sm text-slate-600">
+              {segment.label} · {segment.audience}
+              {school.maintainerName ? ` · ${school.maintainerName}` : ""}
+            </p>
+          </div>
+          <div className="flex flex-col items-start gap-2 sm:items-end">
+            <span className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600">
+              ID: {school.slug}
             </span>
-          )}
+            {role && (
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                {ROLE_LABELS[role]}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -532,6 +541,8 @@ export default async function SchoolDetailsPage({
           rules={rules}
           capabilities={capabilities}
           profile={{
+            administrativeDependency: school.administrativeDependency,
+            maintainerName: school.maintainerName ?? "",
             directorName: school.directorName ?? "",
             directorEmail: school.directorEmail ?? "",
             directorPhone: school.directorPhone ?? "",
@@ -590,6 +601,13 @@ export default async function SchoolDetailsPage({
                 Dados da instituição
               </h2>
               <dl className="mt-4 space-y-3 text-sm">
+                <div>
+                  <dt className="text-xs text-slate-500">Dependência administrativa</dt>
+                  <dd className="mt-0.5 font-medium text-slate-800">
+                    {school.administrativeDependency === "publica" ? "Pública" : "Privada"}
+                    {school.maintainerName ? ` · ${school.maintainerName}` : ""}
+                  </dd>
+                </div>
                 <div>
                   <dt className="text-xs text-slate-500">Endereço</dt>
                   <dd className="mt-0.5 flex items-start gap-2 text-slate-700">

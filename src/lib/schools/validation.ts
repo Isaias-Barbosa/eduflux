@@ -20,6 +20,10 @@ export const createSchoolSchema = z.object({
   segment: z.enum(["infantil", "fundamental", "medio"], {
     error: "Selecione o tipo de ensino",
   }),
+  administrativeDependency: z.enum(["publica", "privada"], {
+    error: "Selecione a dependência administrativa",
+  }),
+  maintainerName: optionalText(160),
   name: requiredText("Nome da escola"),
   legalName: optionalText(160),
   cnpj: z

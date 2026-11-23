@@ -159,6 +159,8 @@ export type UpdateRequestItem = {
 };
 
 export type ProfileForm = {
+  administrativeDependency: "publica" | "privada";
+  maintainerName: string;
   directorName: string;
   directorEmail: string;
   directorPhone: string;
