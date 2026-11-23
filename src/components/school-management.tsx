@@ -179,6 +179,16 @@ export function SchoolManagement({
     capacity: "25",
     physicalRoomId: "",
   });
+  const [editingClassroomId, setEditingClassroomId] = useState<string | null>(null);
+  const [classroomEditForm, setClassroomEditForm] = useState({
+    name: "",
+    grade: "",
+    shift: "Matutino",
+    schoolYear: String(new Date().getFullYear()),
+    capacity: "25",
+    physicalRoomId: "",
+    status: "aberta" as "aberta" | "fechada",
+  });
   const [generatorForm, setGeneratorForm] = useState({
     grade: "",
     shift: "Matutino",
@@ -311,6 +321,37 @@ export function SchoolManagement({
     );
     if (!data) return;
     setNotice(`Turma ${name} removida.`);
+    router.refresh();
+  }
+
+  function startClassroomEdit(classroom: ClassroomItem) {
+    setEditingClassroomId(classroom.id);
+    setClassroomEditForm({
+      name: classroom.name,
+      grade: classroom.grade ?? "",
+      shift: classroom.shift ?? "Matutino",
+      schoolYear: String(classroom.schoolYear),
+      capacity: String(classroom.capacity),
+      physicalRoomId: classroom.physicalRoomId ?? "",
+      status: classroom.status,
+    });
+  }
+
+  async function saveClassroomEdit(event: FormEvent) {
+    event.preventDefault();
+    if (!editingClassroomId) return;
+    const data = await send(
+      `/api/schools/${schoolId}/classrooms/${editingClassroomId}`,
+      {
+        ...classroomEditForm,
+        schoolYear: Number(classroomEditForm.schoolYear),
+        capacity: Number(classroomEditForm.capacity),
+      },
+      "PATCH",
+    );
+    if (!data) return;
+    setNotice("Turma atualizada.");
+    setEditingClassroomId(null);
     router.refresh();
   }
 
@@ -808,6 +849,16 @@ export function SchoolManagement({
                       <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${classroom.status === "aberta" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
                         {classroom.status}
                       </span>
+                      {capabilities.manageClassrooms && (
+                        <button
+                          type="button"
+                          onClick={() => startClassroomEdit(classroom)}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-50"
+                          aria-label={`Editar turma ${classroom.name}`}
+                        >
+                          <Pencil className="size-3.5" />
+                        </button>
+                      )}
                       {capabilities.manageSchool && (
                         <button
                           type="button"
@@ -820,6 +871,56 @@ export function SchoolManagement({
                       )}
                     </div>
                   </div>
+
+                  {editingClassroomId === classroom.id && (
+                    <form onSubmit={saveClassroomEdit} className="mt-4 grid gap-3 border-t border-slate-100 pt-4 sm:grid-cols-2">
+                      <label className="block">
+                        <span className="text-xs font-semibold text-slate-600">Nome</span>
+                        <input className={inputClass} value={classroomEditForm.name} onChange={(e) => setClassroomEditForm((c) => ({ ...c, name: e.target.value }))} />
+                      </label>
+                      <label className="block">
+                        <span className="text-xs font-semibold text-slate-600">Série/ano</span>
+                        <input className={inputClass} value={classroomEditForm.grade} onChange={(e) => setClassroomEditForm((c) => ({ ...c, grade: e.target.value }))} />
+                      </label>
+                      <label className="block">
+                        <span className="text-xs font-semibold text-slate-600">Turno</span>
+                        <select className={inputClass} value={classroomEditForm.shift} onChange={(e) => setClassroomEditForm((c) => ({ ...c, shift: e.target.value }))}>
+                          {SHIFT_OPTIONS.map((shift) => <option key={shift} value={shift}>{shift}</option>)}
+                        </select>
+                      </label>
+                      <label className="block">
+                        <span className="text-xs font-semibold text-slate-600">Ano letivo</span>
+                        <input className={inputClass} type="number" value={classroomEditForm.schoolYear} onChange={(e) => setClassroomEditForm((c) => ({ ...c, schoolYear: e.target.value }))} />
+                      </label>
+                      <label className="block">
+                        <span className="text-xs font-semibold text-slate-600">Vagas ofertadas</span>
+                        <input className={inputClass} type="number" value={classroomEditForm.capacity} onChange={(e) => setClassroomEditForm((c) => ({ ...c, capacity: e.target.value }))} />
+                      </label>
+                      <label className="block">
+                        <span className="text-xs font-semibold text-slate-600">Sala física</span>
+                        <select className={inputClass} value={classroomEditForm.physicalRoomId} onChange={(e) => setClassroomEditForm((c) => ({ ...c, physicalRoomId: e.target.value }))}>
+                          <option value="">Vincular depois</option>
+                          {physicalRooms.map((room) => <option key={room.id} value={room.id}>{room.name} ({room.capacity} cadeiras)</option>)}
+                        </select>
+                      </label>
+                      <label className="block">
+                        <span className="text-xs font-semibold text-slate-600">Status</span>
+                        <select className={inputClass} value={classroomEditForm.status} onChange={(e) => setClassroomEditForm((c) => ({ ...c, status: e.target.value as "aberta" | "fechada" }))}>
+                          <option value="aberta">Aberta</option>
+                          <option value="fechada">Fechada</option>
+                        </select>
+                      </label>
+                      <div className="flex items-end gap-2 sm:col-span-2">
+                        <button type="submit" disabled={Boolean(saving)} className={buttonClass}>
+                          {saving ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
+                          Salvar turma
+                        </button>
+                        <button type="button" onClick={() => setEditingClassroomId(null)} className={secondaryButtonClass}>
+                          Cancelar
+                        </button>
+                      </div>
+                    </form>
+                  )}
                 </div>
               ))}
             </div>
