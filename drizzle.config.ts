@@ -7,11 +7,14 @@ for (const path of [".env.local", ".env.development.local", ".env"]) {
 }
 
 const databaseUrl =
+  process.env.EDUFLUX_DATABASE_URL ??
   process.env.TURSO_DATABASE_URL ??
   process.env.DATABASE_URL ??
   "file:./data/eduflux.db";
 const authToken =
-  process.env.TURSO_AUTH_TOKEN ?? process.env.DATABASE_AUTH_TOKEN;
+  process.env.EDUFLUX_DATABASE_TOKEN ??
+  process.env.TURSO_AUTH_TOKEN ??
+  process.env.DATABASE_AUTH_TOKEN;
 
 const isRemote = /^(libsql|https?):/.test(databaseUrl);
 

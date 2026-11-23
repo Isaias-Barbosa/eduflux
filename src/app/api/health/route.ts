@@ -3,11 +3,14 @@ import { sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 
 const databaseUrl =
+  process.env.EDUFLUX_DATABASE_URL ??
   process.env.TURSO_DATABASE_URL ??
   process.env.DATABASE_URL ??
   "file:./data/eduflux.db";
 const authToken =
-  process.env.TURSO_AUTH_TOKEN ?? process.env.DATABASE_AUTH_TOKEN;
+  process.env.EDUFLUX_DATABASE_TOKEN ??
+  process.env.TURSO_AUTH_TOKEN ??
+  process.env.DATABASE_AUTH_TOKEN;
 
 function provider() {
   if (databaseUrl.startsWith("file:")) return "sqlite-local";
@@ -32,6 +35,7 @@ export async function GET() {
       database: {
         provider: provider(),
         configured: Boolean(databaseUrl),
+        fixedDatabaseConfigured: Boolean(process.env.EDUFLUX_DATABASE_URL),
         authTokenConfigured: Boolean(authToken),
         status,
         error,

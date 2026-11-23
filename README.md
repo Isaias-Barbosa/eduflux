@@ -42,19 +42,24 @@ Ao concluir, a escola é salva com um vínculo de administrador para a conta atu
 
 ## Deploy na Vercel com Turso
 
-A integração do Turso na Vercel cria automaticamente `TURSO_DATABASE_URL` e `TURSO_AUTH_TOKEN`. O código usa essas variáveis antes de `DATABASE_URL`, então não é preciso duplicar a URL do banco.
+A integração do Turso na Vercel cria automaticamente `TURSO_DATABASE_URL` e `TURSO_AUTH_TOKEN`, mas aponta para um **branch por deployment**. Para os dados persistirem, use um banco fixo:
 
-1. Confirme que `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `BETTER_AUTH_SECRET` e `BETTER_AUTH_URL` estão habilitadas para **Production** no projeto da Vercel.
-2. Puxe as variáveis para a máquina e aplique as migrações no banco remoto:
+1. No painel do Turso, abra o banco principal, copie a **Database URL** e crie um token de leitura/escrita.
+2. Adicione na Vercel (Production):
 
    ```bash
-   vercel env pull .env.development.local
+   vercel env add EDUFLUX_DATABASE_URL production
+   vercel env add EDUFLUX_DATABASE_TOKEN production
+   ```
+
+   Também confirme `BETTER_AUTH_SECRET` e `BETTER_AUTH_URL`. O código prefere `EDUFLUX_*`; se não existirem, usa as variáveis da integração e, por fim, `DATABASE_URL` local.
+3. O script `prebuild` roda `npm run db:migrate` automaticamente antes de `next build`, então cada deploy garante as tabelas sem intervenção manual. Para aplicar na mão:
+
+   ```bash
    npm run db:migrate
    ```
 
-   Se não usar a CLI da Vercel, copie os valores do painel para `.env.local` e rode `npm run db:migrate`. Sem as tabelas, `/api/auth/*` retorna 500.
-3. Faça um novo deploy para as variáveis chegarem ao runtime.
-4. Abra `GET /api/health`: `database.status` precisa ser `ok`, `provider` deve ser `turso` e `auth.secretConfigured` precisa ser `true`. O endpoint mostra apenas flags — nunca os valores das variáveis.
+4. Abra `GET /api/health`: `database.status` precisa ser `ok`, `provider` deve ser `turso`, `fixedDatabaseConfigured` precisa ser `true` e `auth.secretConfigured` precisa ser `true`. O endpoint mostra apenas flags — nunca os valores das variáveis.
 
 ## Rotas principais
 
