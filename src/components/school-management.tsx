@@ -11,10 +11,7 @@ import {
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
-import {
-  FACILITY_OPTIONS,
-  SHIFT_OPTIONS,
-} from "@/lib/schools/options";
+import { FACILITY_OPTIONS, SHIFT_OPTIONS } from "@/lib/schools/options";
 import { getModules, type SchoolSegment } from "@/lib/schools/segments";
 import { MembersPanel } from "./members-panel";
 import { StudentsPanel } from "./students-panel";
@@ -23,6 +20,7 @@ import type {
   AssessmentItem,
   ClassroomItem,
   MemberItem,
+  PhysicalRoomItem,
   ProfileForm,
   SchoolCapabilities,
   SchoolRules,
@@ -30,6 +28,7 @@ import type {
   TeacherAssignmentItem,
   TeacherItem,
   UpdateRequestItem,
+  WaitlistItem,
 } from "./school-types";
 
 const inputClass =
@@ -129,12 +128,14 @@ type AssignmentForm = {
   classroomId: string;
   discipline: string;
   studentIds: string[];
+  capacity: string;
 };
 
 const emptyAssignment = (): AssignmentForm => ({
   classroomId: "",
   discipline: "",
   studentIds: [],
+  capacity: "25",
 });
 
 type Props = {
@@ -145,6 +146,8 @@ type Props = {
   capabilities: SchoolCapabilities;
   initial: {
     classrooms: ClassroomItem[];
+    physicalRooms: PhysicalRoomItem[];
+    waitlist: WaitlistItem[];
     teachers: TeacherItem[];
     students: StudentItem[];
     members: MemberItem[];
@@ -163,9 +166,31 @@ export function SchoolManagement({
 }: Props) {
   const router = useRouter();
   const [profileForm, setProfileForm] = useState<ProfileForm>(profile);
-  const [classrooms, setClassrooms] = useState(initial.classrooms);
+  const classrooms = initial.classrooms;
+  const physicalRooms = initial.physicalRooms;
+  const [waitlist, setWaitlist] = useState(initial.waitlist);
   const [teachers, setTeachers] = useState(initial.teachers);
-  const [classroomForm, setClassroomForm] = useState({ name: "", shift: "" });
+  const [classroomForm, setClassroomForm] = useState({
+    name: "",
+    grade: "",
+    shift: "Matutino",
+    schoolYear: String(new Date().getFullYear()),
+    capacity: "25",
+    physicalRoomId: "",
+  });
+  const [generatorForm, setGeneratorForm] = useState({
+    grade: "",
+    shift: "Matutino",
+    quantity: "24",
+    schoolYear: String(new Date().getFullYear()),
+    capacity: "25",
+    physicalRoomId: "",
+  });
+  const [physicalRoomForm, setPhysicalRoomForm] = useState({
+    name: "",
+    squareMeters: "",
+    capacity: "25",
+  });
   const [teacherForm, setTeacherForm] = useState({
     name: "",
     email: "",
@@ -236,12 +261,43 @@ export function SchoolManagement({
     event.preventDefault();
     const data = await send(`/api/schools/${schoolId}/classrooms`, classroomForm);
     if (!data?.id) return;
+    setClassroomForm((current) => ({ ...current, name: "" }));
+    setNotice("Turma criada.");
+    router.refresh();
+  }
 
-    setClassrooms((current) => [
-      ...current,
-      { id: data.id!, name: data.name!, shift: data.shift ?? null },
-    ]);
-    setClassroomForm({ name: "", shift: "" });
+  async function generateClassrooms(event: FormEvent) {
+    event.preventDefault();
+    const data = await send(`/api/schools/${schoolId}/classrooms/generate`, generatorForm);
+    if (!data) return;
+    setNotice(`${(data as { created?: unknown[] }).created?.length ?? 0} turma(s) criada(s).`);
+    router.refresh();
+  }
+
+  async function addPhysicalRoom(event: FormEvent) {
+    event.preventDefault();
+    const data = await send(`/api/schools/${schoolId}/physical-rooms`, physicalRoomForm);
+    if (!data?.id) return;
+    setPhysicalRoomForm({ name: "", squareMeters: "", capacity: "25" });
+    setNotice("Sala física cadastrada.");
+    router.refresh();
+  }
+
+  async function updateWaitlist(entryId: string, status: "atendido" | "cancelado") {
+    const data = await send(
+      `/api/schools/${schoolId}/classroom-waitlist/${entryId}`,
+      { status },
+      "PATCH",
+    );
+    if (!data) return;
+    setWaitlist((current) =>
+      current.map((item) => (item.id === entryId ? { ...item, status } : item)),
+    );
+    setNotice(
+      status === "atendido"
+        ? "Aluno enturmado a partir da lista de espera."
+        : "Inscrição removida da lista de espera.",
+    );
     router.refresh();
   }
 
@@ -265,6 +321,7 @@ export function SchoolManagement({
       classroomName:
         classrooms.find((item) => item.id === assignment.classroomId)?.name ?? "",
       discipline: assignment.discipline,
+      capacity: Number(assignment.capacity) || 25,
       students: assignment.studentIds.map((studentId) => ({
         id: studentId,
         name: studentsById.get(studentId)?.name ?? "Aluno",
@@ -291,12 +348,14 @@ export function SchoolManagement({
             classroomId: assignment.classroomId,
             discipline: assignment.discipline,
             studentIds: assignment.students.map((student) => student.id),
+            capacity: String(assignment.capacity ?? 25),
           }))
         : [
             {
               classroomId: teacher.classroomId ?? "",
               discipline: teacher.discipline,
               studentIds: [],
+              capacity: "25",
             },
           ],
     });
@@ -304,12 +363,16 @@ export function SchoolManagement({
 
   async function saveTeacher(event: FormEvent) {
     event.preventDefault();
-    const assignments = teacherForm.assignments.filter(
+    const selectedAssignments = teacherForm.assignments.filter(
       (assignment) => assignment.classroomId,
     );
+    const assignments = selectedAssignments.map((assignment) => ({
+      ...assignment,
+      capacity: Number(assignment.capacity) || 25,
+    }));
 
     if (assignments.length === 0) {
-      setError("Informe ao menos uma sala para o professor.");
+      setError("Informe ao menos uma turma para o professor.");
       return;
     }
 
@@ -343,7 +406,7 @@ export function SchoolManagement({
       name: teacherForm.name,
       discipline: assignments[0].discipline,
       classroomId: assignments[0].classroomId,
-      assignments: assignments.map((assignment, index) =>
+      assignments: selectedAssignments.map((assignment, index) =>
         toAssignmentItem(assignment, baseTeacher, index),
       ),
     };
@@ -580,52 +643,134 @@ export function SchoolManagement({
       )}
 
       <section className="rounded-2xl border border-slate-200 bg-white p-6">
-        <h2 className="text-base font-semibold text-slate-900">Salas de aula</h2>
+        <h2 className="text-base font-semibold text-slate-900">Turmas e espaços físicos</h2>
         <p className="mt-1 text-sm text-slate-500">
-          Cadastre as turmas para vincular professores e alunos.
+          Turma é o agrupamento pedagógico. Sala física é o espaço real e pode receber turmas em turnos diferentes.
         </p>
 
         {capabilities.createClassrooms && (
-          <form
-            onSubmit={addClassroom}
-            className="mt-5 grid gap-4 sm:grid-cols-[2fr_1fr_auto] sm:items-end"
-          >
-            <Input
-              label="Nome da sala"
-              value={classroomForm.name}
-              onChange={(value) =>
-                setClassroomForm((current) => ({ ...current, name: value }))
-              }
-              placeholder="5º Ano A"
-            />
-            <Input
-              label="Turno"
-              value={classroomForm.shift}
-              onChange={(value) =>
-                setClassroomForm((current) => ({ ...current, shift: value }))
-              }
-              placeholder="Manhã"
-            />
-            <button type="submit" disabled={Boolean(saving)} className={`${buttonClass} sm:mb-0`}>
-              <Plus className="size-4" />
-              Adicionar
-            </button>
+          <div className="mt-5 grid gap-6 lg:grid-cols-2">
+            <form onSubmit={addClassroom} className="space-y-4 rounded-xl border border-slate-200 p-4">
+              <p className="text-sm font-semibold text-slate-800">Criar turma</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Input label="Série/ano" value={classroomForm.grade} onChange={(v) => setClassroomForm((c) => ({ ...c, grade: v }))} placeholder="1º ano" />
+                <Input label="Nome da turma" value={classroomForm.name} onChange={(v) => setClassroomForm((c) => ({ ...c, name: v }))} placeholder="1º Ano A" />
+                <label className="block">
+                  <span className="text-sm font-medium text-slate-700">Turno</span>
+                  <select className={inputClass} value={classroomForm.shift} onChange={(e) => setClassroomForm((c) => ({ ...c, shift: e.target.value }))}>
+                    {SHIFT_OPTIONS.map((shift) => <option key={shift} value={shift}>{shift}</option>)}
+                  </select>
+                </label>
+                <Input label="Ano letivo" type="number" value={classroomForm.schoolYear} onChange={(v) => setClassroomForm((c) => ({ ...c, schoolYear: v }))} />
+                <Input label="Vagas ofertadas" type="number" value={classroomForm.capacity} onChange={(v) => setClassroomForm((c) => ({ ...c, capacity: v }))} />
+                <label className="block">
+                  <span className="text-sm font-medium text-slate-700">Sala física (opcional)</span>
+                  <select className={inputClass} value={classroomForm.physicalRoomId} onChange={(e) => setClassroomForm((c) => ({ ...c, physicalRoomId: e.target.value }))}>
+                    <option value="">Sem sala física vinculada</option>
+                    {physicalRooms.map((room) => <option key={room.id} value={room.id}>{room.name} ({room.capacity} cadeiras)</option>)}
+                  </select>
+                </label>
+              </div>
+              <button type="submit" disabled={Boolean(saving)} className={buttonClass}><Plus className="size-4" />Criar turma</button>
+            </form>
+
+            <form onSubmit={generateClassrooms} className="space-y-4 rounded-xl border border-emerald-200 bg-emerald-50/40 p-4">
+              <p className="text-sm font-semibold text-slate-800">Gerador de turmas-base</p>
+              <p className="text-xs text-slate-600">Planejamento prévio: gera turmas por série/turno. Ex.: 24 turmas para 1º ano Matutino.</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Input label="Série/ano" value={generatorForm.grade} onChange={(v) => setGeneratorForm((c) => ({ ...c, grade: v }))} placeholder="1º ano" />
+                <Input label="Quantidade" type="number" value={generatorForm.quantity} onChange={(v) => setGeneratorForm((c) => ({ ...c, quantity: v }))} />
+                <label className="block">
+                  <span className="text-sm font-medium text-slate-700">Turno</span>
+                  <select className={inputClass} value={generatorForm.shift} onChange={(e) => setGeneratorForm((c) => ({ ...c, shift: e.target.value }))}>
+                    {SHIFT_OPTIONS.map((shift) => <option key={shift} value={shift}>{shift}</option>)}
+                  </select>
+                </label>
+                <Input label="Ano letivo" type="number" value={generatorForm.schoolYear} onChange={(v) => setGeneratorForm((c) => ({ ...c, schoolYear: v }))} />
+                <Input label="Vagas por turma" type="number" value={generatorForm.capacity} onChange={(v) => setGeneratorForm((c) => ({ ...c, capacity: v }))} />
+                <label className="block">
+                  <span className="text-sm font-medium text-slate-700">Sala física (opcional)</span>
+                  <select className={inputClass} value={generatorForm.physicalRoomId} onChange={(e) => setGeneratorForm((c) => ({ ...c, physicalRoomId: e.target.value }))}>
+                    <option value="">Vincular depois</option>
+                    {physicalRooms.map((room) => <option key={room.id} value={room.id}>{room.name} ({room.capacity} cadeiras)</option>)}
+                  </select>
+                </label>
+              </div>
+              <button type="submit" disabled={Boolean(saving)} className={buttonClass}>Gerar turmas-base</button>
+            </form>
+          </div>
+        )}
+
+        {capabilities.managePhysicalRooms && (
+          <form onSubmit={addPhysicalRoom} className="mt-6 grid gap-3 rounded-xl border border-slate-200 p-4 sm:grid-cols-[2fr_1fr_1fr_auto] sm:items-end">
+            <Input label="Sala física" value={physicalRoomForm.name} onChange={(v) => setPhysicalRoomForm((c) => ({ ...c, name: v }))} placeholder="Sala 01 - Bloco A" />
+            <Input label="Metragem (m²)" type="number" value={physicalRoomForm.squareMeters} onChange={(v) => setPhysicalRoomForm((c) => ({ ...c, squareMeters: v }))} placeholder="Opcional" />
+            <Input label="Capacidade de cadeiras" type="number" value={physicalRoomForm.capacity} onChange={(v) => setPhysicalRoomForm((c) => ({ ...c, capacity: v }))} />
+            <button type="submit" disabled={Boolean(saving)} className={buttonClass}><Plus className="size-4" />Adicionar sala física</button>
           </form>
         )}
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          {classrooms.length === 0 ? (
-            <p className="text-sm text-slate-500">Nenhuma sala cadastrada.</p>
-          ) : (
-            classrooms.map((classroom) => (
-              <div key={classroom.id} className="rounded-xl border border-slate-200 p-4">
-                <p className="text-sm font-semibold text-slate-800">{classroom.name}</p>
-                <p className="mt-1 text-xs text-slate-500">
-                  {classroom.shift || "Sem turno"}
-                </p>
+        <div className="mt-6 grid gap-4 lg:grid-cols-2">
+          <div>
+            <p className="text-sm font-semibold text-slate-800">Turmas</p>
+            <div className="mt-3 space-y-3">
+              {classrooms.length === 0 ? <p className="text-sm text-slate-500">Nenhuma turma cadastrada.</p> : classrooms.map((classroom) => (
+                <div key={classroom.id} className="rounded-xl border border-slate-200 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">{classroom.name}</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {classroom.grade || "Série não informada"} · {classroom.shift || "Sem turno"} · {classroom.schoolYear}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {classroom.occupied}/{classroom.capacity} alunos · {classroom.seatsLeft} vagas
+                        {classroom.physicalRoomName ? ` · ${classroom.physicalRoomName}` : " · sem sala física"}
+                      </p>
+                    </div>
+                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${classroom.status === "aberta" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
+                      {classroom.status}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-slate-800">Salas físicas</p>
+            <div className="mt-3 space-y-3">
+              {physicalRooms.length === 0 ? <p className="text-sm text-slate-500">Nenhuma sala física cadastrada.</p> : physicalRooms.map((room) => (
+                <div key={room.id} className="rounded-xl border border-slate-200 p-4">
+                  <p className="text-sm font-semibold text-slate-800">{room.name}</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {room.capacity} cadeiras{room.squareMeters ? ` · ${room.squareMeters} m²` : ""} · {room.classroomCount} turma(s) vinculada(s)
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+          <p className="text-sm font-semibold text-slate-800">Lista de espera e alertas</p>
+          <p className="mt-1 text-xs text-slate-600">Quando uma turma atinge a capacidade, o aluno fica cadastrado e entra na lista de espera.</p>
+          <div className="mt-3 space-y-2">
+            {waitlist.filter((item) => item.status === "aguardando").length === 0 ? (
+              <p className="text-sm text-slate-500">Nenhum aluno aguardando vaga.</p>
+            ) : waitlist.filter((item) => item.status === "aguardando").map((item) => (
+              <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-white px-3 py-2">
+                <div className="text-sm text-slate-700">
+                  <span className="font-semibold">{item.studentName}</span>
+                  <span className="text-slate-500"> · {item.grade || "Série"} · {item.shift || "Turno"} · {item.classroomName || "Turma cheia"}{item.discipline ? ` · ${item.discipline}` : ""}</span>
+                </div>
+                {capabilities.manageWaitlist && (
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => updateWaitlist(item.id, "atendido")} className={secondaryButtonClass}>Marcar atendido</button>
+                    <button type="button" onClick={() => updateWaitlist(item.id, "cancelado")} className={secondaryButtonClass}>Cancelar</button>
+                  </div>
+                )}
               </div>
-            ))
-          )}
+            ))}
+          </div>
         </div>
       </section>
 
@@ -683,7 +828,7 @@ export function SchoolManagement({
 
             <fieldset className="space-y-3">
               <legend className="text-sm font-medium text-slate-700">
-                Salas, disciplinas e alunos
+                Turmas, disciplinas e alunos
               </legend>
 
               {teacherForm.assignments.map((assignment, index) => {
@@ -698,37 +843,24 @@ export function SchoolManagement({
                     key={index}
                     className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/60 p-4"
                   >
-                    <div className="grid gap-3 sm:grid-cols-[1.4fr_1fr_auto] sm:items-end">
+                    <div className="grid gap-3 sm:grid-cols-[1.4fr_1fr_0.7fr_auto] sm:items-end">
                       <label className="block">
-                        <span className="text-xs font-semibold text-slate-600">
-                          Sala
-                        </span>
+                        <span className="text-xs font-semibold text-slate-600">Turma</span>
                         <select
                           value={assignment.classroomId}
-                          onChange={(event) =>
-                            setAssignment(index, {
-                              classroomId: event.target.value,
-                              studentIds: [],
-                            })
-                          }
+                          onChange={(event) => setAssignment(index, { classroomId: event.target.value, studentIds: [] })}
                           className={inputClass}
                         >
-                          <option value="">Selecione a sala</option>
+                          <option value="">Selecione a turma</option>
                           {classrooms.map((classroom) => (
                             <option key={classroom.id} value={classroom.id}>
-                              {classroom.name}
+                              {classroom.name} ({classroom.occupied}/{classroom.capacity})
                             </option>
                           ))}
                         </select>
                       </label>
-                      <Input
-                        label="Disciplina"
-                        value={assignment.discipline}
-                        onChange={(value) =>
-                          setAssignment(index, { discipline: value })
-                        }
-                        placeholder="Matemática"
-                      />
+                      <Input label="Disciplina" value={assignment.discipline} onChange={(value) => setAssignment(index, { discipline: value })} placeholder="Matemática" />
+                      <Input label="Limite alunos" type="number" value={assignment.capacity} onChange={(value) => setAssignment(index, { capacity: value })} placeholder="25" />
                       {teacherForm.assignments.length > 1 && (
                         <button
                           type="button"
@@ -779,8 +911,8 @@ export function SchoolManagement({
                         {classroomStudents.length === 0 ? (
                           <p className="text-xs text-slate-500">
                             {assignment.classroomId
-                              ? "Nenhum aluno ativo nesta sala."
-                              : "Selecione uma sala para ver os alunos."}
+                              ? "Nenhum aluno ativo nesta turma."
+                              : "Selecione uma turma para ver os alunos."}
                           </p>
                         ) : (
                           classroomStudents.map((student) => (
@@ -825,7 +957,7 @@ export function SchoolManagement({
                   }))
                 }
               >
-                <Plus className="size-3.5" /> Adicionar vínculo
+                <Plus className="size-3.5" /> Adicionar vínculo (turma/disciplina)
               </button>
             </fieldset>
 
@@ -908,7 +1040,7 @@ export function SchoolManagement({
                   </div>
                 ) : (
                   <p className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-500">
-                    <span className="font-semibold text-slate-700">Sala:</span>{" "}
+                    <span className="font-semibold text-slate-700">Turma:</span>{" "}
                     {teacher.classroomName || "Não vinculada"}
                   </p>
                 )}

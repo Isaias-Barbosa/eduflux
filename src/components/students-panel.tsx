@@ -13,6 +13,7 @@ import {
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
+import { SHIFT_OPTIONS } from "@/lib/schools/options";
 import type {
   ClassroomItem,
   HistoryRecordItem,
@@ -214,7 +215,7 @@ const emptyForm: StudentForm = {
   city: "",
   state: "",
   grade: "",
-  shift: "Manhã",
+  shift: "Matutino",
   classroomId: "",
 };
 
@@ -242,7 +243,7 @@ function toForm(student: StudentItem): StudentForm {
     city: student.city ?? "",
     state: student.state ?? "",
     grade: student.grade ?? "",
-    shift: student.shift ?? "Manhã",
+    shift: student.shift ?? "Matutino",
     classroomId: student.classroomId ?? "",
   };
 }
@@ -449,13 +450,16 @@ export function StudentsPanel({
         );
         setNotice("Dados cadastrais atualizados.");
       } else {
+        const warning = (data as { warning?: string; suggestions?: Array<{ name: string; seatsLeft: number }> }).warning;
+        const suggestions = (data as { suggestions?: Array<{ name: string; seatsLeft: number }> }).suggestions ?? [];
         commit([
           ...items,
           {
             ...form,
             id: data.id!,
             enrollmentNumber: data.enrollmentNumber ?? null,
-            classroomName: classroom?.name ?? null,
+            classroomName: warning ? null : (classroom?.name ?? null),
+            classroomId: warning ? null : (form.classroomId || null),
             status: "ativo",
             birthCertificateStatus: "pendente",
             schoolHistoryStatus: "pendente",
@@ -464,7 +468,14 @@ export function StudentsPanel({
             transferRecords: [],
           } as StudentItem,
         ]);
-        setNotice(`Aluno matriculado: ${data.enrollmentNumber}`);
+        const suggestionText = suggestions.length
+          ? ` Sugestões: ${suggestions.map((s) => `${s.name} (${s.seatsLeft} vagas)`).join(", ")}.`
+          : "";
+        setNotice(
+          warning
+            ? `Aluno matriculado: ${data.enrollmentNumber}. ${warning}${suggestionText}`
+            : `Aluno matriculado: ${data.enrollmentNumber}`,
+        );
       }
 
       setForm(emptyForm);
@@ -695,7 +706,13 @@ export function StudentsPanel({
 
   const classroomOptions: ReadonlyArray<readonly [string, string]> = [
     ["", "Sem turma"],
-    ...classrooms.map((item) => [item.id, item.name] as const),
+    ...classrooms.map(
+      (item) =>
+        [
+          item.id,
+          `${item.name} · ${item.shift ?? "Sem turno"} · ${item.occupied}/${item.capacity} vagas`,
+        ] as const,
+    ),
   ];
 
   return (
@@ -814,11 +831,7 @@ export function StudentsPanel({
                 label="Turno"
                 value={form.shift}
                 onChange={(v) => set("shift", v)}
-                options={[
-                  ["Manhã", "Manhã"],
-                  ["Tarde", "Tarde"],
-                  ["Noite", "Noite"],
-                ]}
+                options={SHIFT_OPTIONS.map((shift) => [shift, shift])}
                 required
               />
             </div>

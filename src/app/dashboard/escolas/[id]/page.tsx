@@ -28,16 +28,18 @@ import { user } from "@/lib/db/auth-schema";
 import { db } from "@/lib/db/client";
 import {
   classrooms,
+  classroomWaitlist,
+  physicalRooms,
+  schoolMembers,
   schools,
   studentAssessments,
   studentOccurrences,
-  studentTransferRecords,
   students,
+  studentTransferRecords,
   studentUpdateRequests,
   teacherAssignments,
   teacherStudents,
   teachers,
-  schoolMembers,
 } from "@/lib/db/schema";
 import { canAccessSchool } from "@/lib/schools/access";
 import { formatCep } from "@/lib/schools/cep";
@@ -74,10 +76,54 @@ export default async function SchoolDetailsPage({
   if (!school) notFound();
 
   const classroomRows = await db
-    .select()
+    .select({
+      id: classrooms.id,
+      name: classrooms.name,
+      grade: classrooms.grade,
+      shift: classrooms.shift,
+      schoolYear: classrooms.schoolYear,
+      capacity: classrooms.capacity,
+      status: classrooms.status,
+      physicalRoomId: classrooms.physicalRoomId,
+      physicalRoomName: physicalRooms.name,
+      physicalRoomCapacity: physicalRooms.capacity,
+    })
     .from(classrooms)
+    .leftJoin(physicalRooms, eq(classrooms.physicalRoomId, physicalRooms.id))
     .where(eq(classrooms.schoolId, id))
-    .orderBy(asc(classrooms.name));
+    .orderBy(asc(classrooms.schoolYear), asc(classrooms.name));
+
+  const physicalRoomRows = await db
+    .select({
+      id: physicalRooms.id,
+      name: physicalRooms.name,
+      squareMeters: physicalRooms.squareMeters,
+      capacity: physicalRooms.capacity,
+    })
+    .from(physicalRooms)
+    .where(eq(physicalRooms.schoolId, id))
+    .orderBy(asc(physicalRooms.name));
+
+  const waitlistRows = await db
+    .select({
+      id: classroomWaitlist.id,
+      studentId: classroomWaitlist.studentId,
+      studentName: students.name,
+      grade: students.grade,
+      shift: students.shift,
+      classroomId: classroomWaitlist.classroomId,
+      classroomName: classrooms.name,
+      discipline: classroomWaitlist.discipline,
+      note: classroomWaitlist.note,
+      status: classroomWaitlist.status,
+      schoolYear: classroomWaitlist.schoolYear,
+      createdAt: classroomWaitlist.createdAt,
+    })
+    .from(classroomWaitlist)
+    .innerJoin(students, eq(classroomWaitlist.studentId, students.id))
+    .leftJoin(classrooms, eq(classroomWaitlist.classroomId, classrooms.id))
+    .where(eq(classroomWaitlist.schoolId, id))
+    .orderBy(asc(classroomWaitlist.status), asc(classroomWaitlist.createdAt));
 
   const teacherRows = await db
     .select({ teacher: teachers, classroomName: classrooms.name })
@@ -96,6 +142,7 @@ export default async function SchoolDetailsPage({
             classroomId: teacherAssignments.classroomId,
             classroomName: classrooms.name,
             discipline: teacherAssignments.discipline,
+            capacity: teacherAssignments.capacity,
           })
           .from(teacherAssignments)
           .innerJoin(classrooms, eq(teacherAssignments.classroomId, classrooms.id))
@@ -248,6 +295,7 @@ export default async function SchoolDetailsPage({
         classroomId: assignment.classroomId,
         classroomName: assignment.classroomName,
         discipline: assignment.discipline,
+        capacity: assignment.capacity,
         students: assignmentStudentRows
           .filter((link) => link.assignmentId === assignment.id)
           .map((link) => ({ id: link.studentId, name: link.studentName })),
@@ -267,6 +315,16 @@ export default async function SchoolDetailsPage({
       createdAt: record.createdAt.toISOString(),
     });
     transfersByStudent.set(record.studentId, list);
+  }
+
+  const classroomOccupancy = new Map<string, number>();
+  for (const row of allStudentRows) {
+    if (row.student.classroomId && row.student.status === "ativo") {
+      classroomOccupancy.set(
+        row.student.classroomId,
+        (classroomOccupancy.get(row.student.classroomId) ?? 0) + 1,
+      );
+    }
   }
 
   const studentItems = studentRows.map(({ student, classroomName }) => ({
@@ -489,7 +547,24 @@ export default async function SchoolDetailsPage({
             enabledModules: school.enabledModules,
           }}
           initial={{
-            classrooms: classroomRows,
+            classrooms: classroomRows.map((row) => ({
+              ...row,
+              occupied: classroomOccupancy.get(row.id) ?? 0,
+              seatsLeft: Math.max(
+                0,
+                row.capacity - (classroomOccupancy.get(row.id) ?? 0),
+              ),
+            })),
+            physicalRooms: physicalRoomRows.map((room) => ({
+              ...room,
+              classroomCount: classroomRows.filter(
+                (row) => row.physicalRoomId === room.id,
+              ).length,
+            })),
+            waitlist: waitlistRows.map((row) => ({
+              ...row,
+              createdAt: row.createdAt.toISOString(),
+            })),
             teachers: teacherItems,
             students: studentItems,
             members: memberRows.map((member) => ({

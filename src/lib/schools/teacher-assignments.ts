@@ -11,6 +11,7 @@ export type ValidatedAssignment = {
   classroomId: string;
   discipline: string;
   studentIds: string[];
+  capacity: number;
 };
 
 type ValidationResult =
@@ -26,13 +27,13 @@ export async function validateAssignments(
 
   for (const item of rawAssignments) {
     const [classroom] = await db
-      .select({ id: classrooms.id })
+      .select({ id: classrooms.id, capacity: classrooms.capacity })
       .from(classrooms)
       .where(and(eq(classrooms.id, item.classroomId), eq(classrooms.schoolId, schoolId)))
       .limit(1);
 
     if (!classroom) {
-      return { ok: false, error: "Sala de aula inválida para esta escola." };
+      return { ok: false, error: "Turma inválida para esta escola." };
     }
 
     const studentIds = [...new Set(item.studentIds)].filter(Boolean);
@@ -47,10 +48,25 @@ export async function validateAssignments(
       }
     }
 
+    const label = item.discipline.trim() || "disciplina";
+    if (studentIds.length > item.capacity) {
+      return {
+        ok: false,
+        error: `${label}: ${studentIds.length} alunos excedem o limite de ${item.capacity} da turma.`,
+      };
+    }
+    if (studentIds.length > classroom.capacity) {
+      return {
+        ok: false,
+        error: `${label}: ${studentIds.length} alunos excedem as ${classroom.capacity} vagas da turma.`,
+      };
+    }
+
     assignments.push({
       classroomId: item.classroomId,
       discipline: item.discipline.trim(),
       studentIds,
+      capacity: item.capacity,
     });
   }
 

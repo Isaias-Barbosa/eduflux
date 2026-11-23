@@ -209,20 +209,78 @@ export const transferStudentSchema = z
     }
   });
 
+const capacityField = z.coerce
+  .number("Informe a capacidade")
+  .int("Capacidade inválida")
+  .min(1, "Capacidade mínima: 1")
+  .max(500, "Capacidade máxima: 500");
+
+const schoolYearField = z.coerce
+  .number("Informe o ano letivo")
+  .int("Ano letivo inválido")
+  .min(2000, "Ano letivo mínimo: 2000")
+  .max(2100, "Ano letivo máximo: 2100");
+
 export const createClassroomSchema = z.object({
-  name: requiredText("Nome da sala", 80),
-  shift: optionalText(40),
+  name: requiredText("Nome da turma", 80),
+  grade: requiredText("Série/ano", 40),
+  shift: z.enum(SHIFT_OPTIONS),
+  schoolYear: schoolYearField.default(new Date().getFullYear()),
+  capacity: capacityField.default(25),
+  physicalRoomId: z.union([z.literal(""), z.string().trim()]).default(""),
+});
+
+export const updateClassroomSchema = createClassroomSchema.partial().extend({
+  status: z.enum(["aberta", "fechada"]).optional(),
+});
+
+export const generateClassroomsSchema = z.object({
+  grade: requiredText("Série/ano", 40),
+  shift: z.enum(SHIFT_OPTIONS),
+  quantity: z.coerce
+    .number("Informe a quantidade")
+    .int("Quantidade inválida")
+    .min(1, "Mínimo de 1 turma")
+    .max(60, "Máximo de 60 turmas"),
+  schoolYear: schoolYearField.default(new Date().getFullYear()),
+  capacity: capacityField.default(25),
+  physicalRoomId: z.union([z.literal(""), z.string().trim()]).default(""),
+});
+
+export const createPhysicalRoomSchema = z.object({
+  name: requiredText("Nome da sala física", 80),
+  squareMeters: z.coerce
+    .number("Informe a metragem")
+    .min(0, "Metragem inválida")
+    .max(10000, "Metragem inválida")
+    .nullable()
+    .default(null),
+  capacity: capacityField.default(25),
+});
+
+export const updatePhysicalRoomSchema = createPhysicalRoomSchema.partial();
+
+export const createWaitlistSchema = z.object({
+  studentId: requiredText("Aluno", 120),
+  classroomId: z.union([z.literal(""), z.string().trim()]).default(""),
+  discipline: optionalText(120),
+  note: optionalRawText(255),
+});
+
+export const updateWaitlistSchema = z.object({
+  status: z.enum(["aguardando", "atendido", "cancelado"]),
 });
 
 /**
- * Cada vínculo representa uma sala/disciplina e os alunos atendidos nela.
+ * Cada vínculo representa uma turma/disciplina e os alunos atendidos nela.
  * `classroomId` e `discipline` isolados são mantidos para compatibilidade com
  * o formulário anterior; quando não há vínculos, um é derivado deles.
  */
 export const teacherAssignmentSchema = z.object({
-  classroomId: requiredText("Sala do professor", 120),
+  classroomId: requiredText("Turma do professor", 120),
   discipline: optionalText(120),
   studentIds: z.array(z.string().trim()).default([]),
+  capacity: capacityField.default(25),
 });
 
 export const createTeacherSchema = z.object({

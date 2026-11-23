@@ -4,6 +4,11 @@ import { user } from "@/lib/db/auth-schema";
 import { db } from "@/lib/db/client";
 import { classrooms, students } from "@/lib/db/schema";
 import { authorizeSchoolRequest, invalidPayload } from "@/lib/schools/api-access";
+import {
+  registerWaitlistEntry,
+  suggestClassrooms,
+  validateClassroomEnrollment,
+} from "@/lib/schools/classroom-capacity";
 import { createStudentSchema } from "@/lib/schools/management-validation";
 import { nextEnrollmentNumber } from "@/lib/schools/student-service";
 
@@ -34,7 +39,21 @@ export async function POST(
       .limit(1);
 
     if (classroom.length === 0) {
-      return invalidPayload("Sala de aula inválida para esta escola.");
+      return invalidPayload("Turma inválida para esta escola.");
+    }
+  }
+
+  let enrollmentWarning: string | null = null;
+  let suggestedClassrooms: Awaited<ReturnType<typeof suggestClassrooms>> = [];
+  let waitlistCreated = false;
+  if (data.classroomId) {
+    const capacityError = await validateClassroomEnrollment(id, data.classroomId);
+    if (capacityError) {
+      enrollmentWarning = capacityError;
+      suggestedClassrooms = await suggestClassrooms(id, {
+        grade: data.grade,
+        shift: data.shift,
+      });
     }
   }
 
@@ -57,7 +76,7 @@ export async function POST(
     await tx.insert(students).values({
       id: studentId,
       schoolId: id,
-      classroomId: data.classroomId || null,
+      classroomId: enrollmentWarning ? null : data.classroomId || null,
       guardianUserId: data.guardianUserId || null,
       name: data.name,
       enrollmentNumber: number,
@@ -91,5 +110,25 @@ export async function POST(
     return number;
   });
 
-  return Response.json({ id: studentId, enrollmentNumber }, { status: 201 });
+  if (enrollmentWarning && data.classroomId) {
+    const entry = await registerWaitlistEntry({
+      schoolId: id,
+      studentId,
+      classroomId: data.classroomId,
+      discipline: "",
+      note: enrollmentWarning,
+    });
+    waitlistCreated = entry.created;
+  }
+
+  return Response.json(
+    {
+      id: studentId,
+      enrollmentNumber,
+      warning: enrollmentWarning,
+      suggestions: suggestedClassrooms,
+      waitlistCreated,
+    },
+    { status: 201 },
+  );
 }

@@ -118,7 +118,28 @@ export const schoolMembers = sqliteTable(
   ],
 );
 
-/** Salas/turmas da escola. Um professor pode ser responsável por uma sala. */
+/** Espaço físico real (sala, laboratório), independente da turma pedagógica. */
+export const physicalRooms = sqliteTable(
+  "physical_rooms",
+  {
+    id: text("id").primaryKey(),
+    schoolId: text("school_id")
+      .notNull()
+      .references(() => schools.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    squareMeters: real("square_meters"),
+    capacity: integer("capacity").notNull().default(25),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    uniqueIndex("physical_rooms_school_name_idx").on(table.schoolId, table.name),
+    index("physical_rooms_school_id_idx").on(table.schoolId),
+  ],
+);
+
+/** Turma: agrupamento pedagógico que pode ocupar um espaço físico por turno. */
 export const classrooms = sqliteTable(
   "classrooms",
   {
@@ -127,14 +148,29 @@ export const classrooms = sqliteTable(
       .notNull()
       .references(() => schools.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
+    schoolYear: integer("school_year").notNull().default(2026),
+    grade: text("grade"),
     shift: text("shift"),
+    /** Vagas ofertadas pela turma. */
+    capacity: integer("capacity").notNull().default(25),
+    physicalRoomId: text("physical_room_id").references(() => physicalRooms.id, {
+      onDelete: "set null",
+    }),
+    status: text("status", { enum: ["aberta", "fechada"] })
+      .notNull()
+      .default("aberta"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
   },
   (table) => [
-    uniqueIndex("classrooms_school_name_idx").on(table.schoolId, table.name),
+    uniqueIndex("classrooms_school_name_idx").on(
+      table.schoolId,
+      table.schoolYear,
+      table.name,
+    ),
     index("classrooms_school_id_idx").on(table.schoolId),
+    index("classrooms_physical_room_id_idx").on(table.physicalRoomId),
   ],
 );
 
@@ -184,6 +220,8 @@ export const teacherAssignments = sqliteTable(
       .notNull()
       .references(() => classrooms.id, { onDelete: "cascade" }),
     discipline: text("discipline").notNull().default(""),
+    /** Limite de alunos desta disciplina nesta turma com este professor. */
+    capacity: integer("capacity").notNull().default(25),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
@@ -225,6 +263,37 @@ export const teacherStudents = sqliteTable(
     ),
     index("teacher_students_school_id_idx").on(table.schoolId),
     index("teacher_students_student_id_idx").on(table.studentId),
+  ],
+);
+
+/** Alunos aguardando vaga em uma turma/disciplina (ou nova turma). */
+export const classroomWaitlist = sqliteTable(
+  "classroom_waitlist",
+  {
+    id: text("id").primaryKey(),
+    schoolId: text("school_id")
+      .notNull()
+      .references(() => schools.id, { onDelete: "cascade" }),
+    classroomId: text("classroom_id").references(() => classrooms.id, {
+      onDelete: "cascade",
+    }),
+    discipline: text("discipline").notNull().default(""),
+    studentId: text("student_id")
+      .notNull()
+      .references(() => students.id, { onDelete: "cascade" }),
+    schoolYear: integer("school_year").notNull().default(2026),
+    note: text("note"),
+    status: text("status", { enum: ["aguardando", "atendido", "cancelado"] })
+      .notNull()
+      .default("aguardando"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    index("classroom_waitlist_school_id_idx").on(table.schoolId),
+    index("classroom_waitlist_classroom_id_idx").on(table.classroomId),
+    index("classroom_waitlist_student_id_idx").on(table.studentId),
   ],
 );
 

@@ -6,7 +6,39 @@ export type { SchoolCapabilities };
 export type ClassroomItem = {
   id: string;
   name: string;
+  grade: string | null;
   shift: string | null;
+  schoolYear: number;
+  capacity: number;
+  occupied: number;
+  seatsLeft: number;
+  status: "aberta" | "fechada";
+  physicalRoomId: string | null;
+  physicalRoomName: string | null;
+  physicalRoomCapacity: number | null;
+};
+
+export type PhysicalRoomItem = {
+  id: string;
+  name: string;
+  squareMeters: number | null;
+  capacity: number;
+  classroomCount: number;
+};
+
+export type WaitlistItem = {
+  id: string;
+  studentId: string;
+  studentName: string;
+  grade: string | null;
+  shift: string | null;
+  classroomId: string | null;
+  classroomName: string | null;
+  discipline: string;
+  note: string | null;
+  status: "aguardando" | "atendido" | "cancelado";
+  schoolYear: number;
+  createdAt: string;
 };
 
 export type TeacherAssignmentItem = {
@@ -14,6 +46,7 @@ export type TeacherAssignmentItem = {
   classroomId: string;
   classroomName: string;
   discipline: string;
+  capacity: number;
   students: Array<{ id: string; name: string }>;
 };
 

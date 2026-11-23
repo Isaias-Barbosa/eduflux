@@ -42,6 +42,7 @@ export async function GET(_request: Request, { params }: Context) {
             classroomId: teacherAssignments.classroomId,
             classroomName: classrooms.name,
             discipline: teacherAssignments.discipline,
+            capacity: teacherAssignments.capacity,
           })
           .from(teacherAssignments)
           .innerJoin(classrooms, eq(teacherAssignments.classroomId, classrooms.id))
@@ -109,6 +110,7 @@ export async function POST(request: Request, { params }: Context) {
         classroomId: data.classroomId,
         discipline: data.discipline,
         studentIds: legacyStudents.map((row) => row.id),
+        capacity: 25,
       },
     ];
   }
@@ -171,6 +173,7 @@ export async function POST(request: Request, { params }: Context) {
         teacherId,
         classroomId: assignment.classroomId,
         discipline: assignment.discipline,
+        capacity: assignment.capacity,
       });
 
       for (const studentId of assignment.studentIds) {
@@ -197,6 +200,7 @@ function deduplicateAssignments(items: AssignmentInput[]) {
     const existing = seen.get(key);
     seen.set(key, {
       ...item,
+      capacity: Math.max(existing?.capacity ?? 0, item.capacity),
       studentIds: [...new Set([...(existing?.studentIds ?? []), ...item.studentIds])],
     });
   }

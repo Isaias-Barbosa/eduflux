@@ -104,6 +104,7 @@ export async function PATCH(request: Request, { params }: Context) {
         teacherId,
         classroomId: assignment.classroomId,
         discipline: assignment.discipline,
+        capacity: assignment.capacity,
       });
 
       for (const studentId of new Set(assignment.studentIds)) {

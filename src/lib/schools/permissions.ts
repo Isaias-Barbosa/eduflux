@@ -46,6 +46,10 @@ export const PERMISSIONS = [
   "member:read",
   "member:manage",
   "classroom:create",
+  "classroom:update",
+  "classroom:delete",
+  "room:manage",
+  "waitlist:manage",
   "teacher:read",
   "teacher:create",
   "teacher:update",
@@ -89,6 +93,10 @@ const OPERATIONAL_ACCESS: Permission[] = [
   "update-request:read",
   "update-request:review",
   "classroom:create",
+  "classroom:update",
+  "classroom:delete",
+  "room:manage",
+  "waitlist:manage",
   "occurrence:read",
   "history:read",
   "history:issue",
@@ -109,12 +117,18 @@ export const ROLE_PERMISSIONS: Record<SchoolRole, readonly Permission[]> = {
     "student:read",
     "student:create",
     "student:update",
+    "waitlist:manage",
   ],
   direcao: [
     "school:read",
     "member:read",
     "teacher:read",
     "student:read",
+    "student:create",
+    "student:update",
+    "student:enroll",
+    "classroom:update",
+    "waitlist:manage",
     "report:read",
     "student:export",
     "update-request:read",
@@ -180,6 +194,9 @@ export type SchoolCapabilities = Record<
   | "manageMembers"
   | "manageStudents"
   | "createClassrooms"
+  | "manageClassrooms"
+  | "managePhysicalRooms"
+  | "manageWaitlist"
   | "createTeachers"
   | "updateTeachers"
   | "createStudents"
@@ -213,6 +230,9 @@ export async function getSchoolCapabilities(
     manageMembers: can("member:manage"),
     manageStudents: can("student:delete"),
     createClassrooms: can("classroom:create"),
+    manageClassrooms: can("classroom:update"),
+    managePhysicalRooms: can("room:manage"),
+    manageWaitlist: can("waitlist:manage"),
     createTeachers: can("teacher:create"),
     updateTeachers: can("teacher:update"),
     createStudents: can("student:create"),

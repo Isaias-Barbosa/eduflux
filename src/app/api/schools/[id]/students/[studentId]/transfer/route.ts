@@ -7,6 +7,7 @@ import {
   students,
 } from "@/lib/db/schema";
 import { authorizeSchoolRequest, invalidPayload } from "@/lib/schools/api-access";
+import { validateClassroomEnrollment } from "@/lib/schools/classroom-capacity";
 import { buildHistorySnapshot } from "@/lib/schools/history";
 import { transferStudentSchema } from "@/lib/schools/management-validation";
 
@@ -47,8 +48,15 @@ export async function PATCH(
       .limit(1);
 
     if (classroom.length === 0) {
-      return invalidPayload("Sala de aula inválida para esta escola.");
+      return invalidPayload("Turma inválida para esta escola.");
     }
+
+    const capacityError = await validateClassroomEnrollment(
+      id,
+      data.classroomId,
+      studentId,
+    );
+    if (capacityError) return invalidPayload(capacityError);
   }
 
   const transferDate = data.transferDate || new Date().toISOString().slice(0, 10);

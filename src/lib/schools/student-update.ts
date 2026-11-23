@@ -3,6 +3,10 @@ import { and, eq } from "drizzle-orm";
 import { user } from "@/lib/db/auth-schema";
 import { db } from "@/lib/db/client";
 import { classrooms, students } from "@/lib/db/schema";
+import {
+  registerWaitlistEntry,
+  validateClassroomEnrollment,
+} from "./classroom-capacity";
 import type { updateStudentSchema } from "./management-validation";
 import type { z } from "zod";
 
@@ -22,7 +26,23 @@ export async function applyStudentUpdate(
       .limit(1);
 
     if (classroom.length === 0) {
-      return "Sala de aula inválida para esta escola.";
+      return "Turma inválida para esta escola.";
+    }
+
+    const capacityError = await validateClassroomEnrollment(
+      schoolId,
+      data.classroomId,
+      studentId,
+    );
+    if (capacityError) {
+      await registerWaitlistEntry({
+        schoolId,
+        studentId,
+        classroomId: data.classroomId,
+        discipline: "",
+        note: capacityError,
+      });
+      return `${capacityError} O aluno foi colocado na lista de espera.`;
     }
   }
 

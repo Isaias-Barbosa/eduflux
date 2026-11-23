@@ -1,14 +1,50 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 
 import { db } from "@/lib/db/client";
-import { classrooms } from "@/lib/db/schema";
+import { classrooms, physicalRooms } from "@/lib/db/schema";
 import { authorizeSchoolRequest, invalidPayload } from "@/lib/schools/api-access";
+import {
+  classroomOccupancyMap,
+  validatePhysicalRoomCapacity,
+} from "@/lib/schools/classroom-capacity";
 import { createClassroomSchema } from "@/lib/schools/management-validation";
 
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+type Context = { params: Promise<{ id: string }> };
+
+export async function GET(_request: Request, { params }: Context) {
+  const { id } = await params;
+  const access = await authorizeSchoolRequest(id, "school:read");
+  if (access.error) return access.error;
+
+  const occupancy = await classroomOccupancyMap(id);
+  const rows = await db
+    .select({
+      id: classrooms.id,
+      name: classrooms.name,
+      grade: classrooms.grade,
+      shift: classrooms.shift,
+      schoolYear: classrooms.schoolYear,
+      capacity: classrooms.capacity,
+      status: classrooms.status,
+      physicalRoomId: classrooms.physicalRoomId,
+      physicalRoomName: physicalRooms.name,
+      physicalRoomCapacity: physicalRooms.capacity,
+    })
+    .from(classrooms)
+    .leftJoin(physicalRooms, eq(classrooms.physicalRoomId, physicalRooms.id))
+    .where(eq(classrooms.schoolId, id))
+    .orderBy(asc(classrooms.schoolYear), asc(classrooms.name));
+
+  return Response.json({
+    classrooms: rows.map((row) => ({
+      ...row,
+      occupied: occupancy.get(row.id) ?? 0,
+      seatsLeft: Math.max(0, row.capacity - (occupancy.get(row.id) ?? 0)),
+    })),
+  });
+}
+
+export async function POST(request: Request, { params }: Context) {
   const { id } = await params;
   const access = await authorizeSchoolRequest(id, "classroom:create");
   if (access.error) return access.error;
@@ -22,26 +58,47 @@ export async function POST(
     return invalidPayload(firstIssue);
   }
 
-  const name = parsed.data.name.trim();
+  const data = parsed.data;
+  const name = data.name.trim();
+  const physicalRoomId = data.physicalRoomId || null;
+
+  const capacityError = await validatePhysicalRoomCapacity(
+    id,
+    physicalRoomId,
+    data.capacity,
+  );
+  if (capacityError) return invalidPayload(capacityError);
 
   const existing = await db
     .select({ id: classrooms.id })
     .from(classrooms)
-    .where(and(eq(classrooms.schoolId, id), eq(classrooms.name, name)))
+    .where(
+      and(
+        eq(classrooms.schoolId, id),
+        eq(classrooms.schoolYear, data.schoolYear),
+        eq(classrooms.name, name),
+      ),
+    )
     .limit(1);
 
   if (existing.length > 0) {
-    return invalidPayload("Já existe uma sala com esse nome.");
+    return Response.json(
+      { error: "Já existe uma turma com este nome no ano letivo informado." },
+      { status: 409 },
+    );
   }
 
   const classroomId = crypto.randomUUID();
-
   await db.insert(classrooms).values({
     id: classroomId,
     schoolId: id,
     name,
-    shift: parsed.data.shift || null,
+    grade: data.grade.trim(),
+    shift: data.shift,
+    schoolYear: data.schoolYear,
+    capacity: data.capacity,
+    physicalRoomId,
   });
 
-  return Response.json({ id: classroomId, name, shift: parsed.data.shift }, { status: 201 });
+  return Response.json({ id: classroomId, name }, { status: 201 });
 }
