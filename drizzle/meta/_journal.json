@@ -43,6 +43,13 @@
       "when": 1795445930697,
       "tag": "0005_jittery_midnight",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1795448609087,
+      "tag": "0006_slippery_red_hulk",
+      "breakpoints": true
     }
   ]
 }

@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { schools } from "@/lib/db/schema";
 import { authorizeSchoolRequest, invalidPayload } from "@/lib/schools/api-access";
+import { logAudit } from "@/lib/schools/audit";
 import { updateSchoolProfileSchema } from "@/lib/schools/management-validation";
 
 type Context = { params: Promise<{ id: string }> };
@@ -60,6 +61,17 @@ export async function PATCH(request: Request, { params }: Context) {
       updatedAt: new Date(),
     })
     .where(eq(schools.id, id));
+
+  await logAudit({
+    schoolId: id,
+    actorUserId: access.session.user.id,
+    actorName: access.session.user.name,
+    actorRole: access.role ?? "desconhecido",
+    action: "school.update",
+    entityType: "school",
+    entityId: id,
+    summary: "Atualizou a configuração da escola.",
+  });
 
   return Response.json({ ok: true });
 }

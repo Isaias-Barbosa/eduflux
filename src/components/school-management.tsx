@@ -13,6 +13,7 @@ import { useState, type FormEvent } from "react";
 
 import { FACILITY_OPTIONS, SHIFT_OPTIONS } from "@/lib/schools/options";
 import { getModules, type SchoolSegment } from "@/lib/schools/segments";
+import { AuditPanel } from "./audit-panel";
 import { MembersPanel } from "./members-panel";
 import { StudentsPanel } from "./students-panel";
 import { UpdateRequestsPanel } from "./update-requests-panel";
@@ -1064,6 +1065,8 @@ export function SchoolManagement({
       {capabilities.reviewRequests && (
         <UpdateRequestsPanel schoolId={schoolId} requests={initial.requests} />
       )}
+
+      {capabilities.manageSchool && <AuditPanel schoolId={schoolId} />}
     </div>
   );
 }

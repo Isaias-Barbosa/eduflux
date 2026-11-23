@@ -3,6 +3,7 @@ import { and, asc, count, eq } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { classrooms, physicalRooms } from "@/lib/db/schema";
 import { authorizeSchoolRequest, invalidPayload } from "@/lib/schools/api-access";
+import { logAudit } from "@/lib/schools/audit";
 import { createPhysicalRoomSchema } from "@/lib/schools/management-validation";
 
 type Context = { params: Promise<{ id: string }> };
@@ -64,6 +65,17 @@ export async function POST(request: Request, { params }: Context) {
     name,
     squareMeters: parsed.data.squareMeters,
     capacity: parsed.data.capacity,
+  });
+
+  await logAudit({
+    schoolId: id,
+    actorUserId: access.session.user.id,
+    actorName: access.session.user.name,
+    actorRole: access.role ?? "desconhecido",
+    action: "room.create",
+    entityType: "physical_room",
+    entityId: roomId,
+    summary: `Cadastrou a sala física ${name} (${parsed.data.capacity} cadeiras).`,
   });
 
   return Response.json({ id: roomId, name }, { status: 201 });

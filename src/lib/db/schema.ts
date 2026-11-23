@@ -556,6 +556,34 @@ export const studentAssessments = sqliteTable(
   ],
 );
 
+/** Log de auditoria das ações administrativas da escola. */
+export const auditLogs = sqliteTable(
+  "audit_logs",
+  {
+    id: text("id").primaryKey(),
+    schoolId: text("school_id")
+      .notNull()
+      .references(() => schools.id, { onDelete: "cascade" }),
+    actorUserId: text("actor_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    actorName: text("actor_name").notNull(),
+    actorRole: text("actor_role").notNull(),
+    action: text("action").notNull(),
+    entityType: text("entity_type").notNull(),
+    entityId: text("entity_id"),
+    summary: text("summary").notNull(),
+    metadata: text("metadata", { mode: "json" }).$type<Record<string, unknown>>(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    index("audit_logs_school_id_idx").on(table.schoolId),
+    index("audit_logs_created_at_idx").on(table.schoolId, table.createdAt),
+  ],
+);
+
 export type School = typeof schools.$inferSelect;
 export type NewSchool = typeof schools.$inferInsert;
 export type SchoolMember = typeof schoolMembers.$inferSelect;
@@ -565,3 +593,4 @@ export type TeacherAssignment = typeof teacherAssignments.$inferSelect;
 export type TeacherStudent = typeof teacherStudents.$inferSelect;
 export type StudentOccurrence = typeof studentOccurrences.$inferSelect;
 export type StudentTransferRecord = typeof studentTransferRecords.$inferSelect;
+export type AuditLog = typeof auditLogs.$inferSelect;

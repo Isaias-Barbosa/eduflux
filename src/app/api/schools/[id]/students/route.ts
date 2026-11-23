@@ -4,6 +4,7 @@ import { user } from "@/lib/db/auth-schema";
 import { db } from "@/lib/db/client";
 import { classrooms, students } from "@/lib/db/schema";
 import { authorizeSchoolRequest, invalidPayload } from "@/lib/schools/api-access";
+import { logAudit } from "@/lib/schools/audit";
 import {
   registerWaitlistEntry,
   suggestClassrooms,
@@ -120,6 +121,18 @@ export async function POST(
     });
     waitlistCreated = entry.created;
   }
+
+  await logAudit({
+    schoolId: id,
+    actorUserId: access.session.user.id,
+    actorName: access.session.user.name,
+    actorRole: access.role ?? "desconhecido",
+    action: "student.create",
+    entityType: "student",
+    entityId: studentId,
+    summary: `Matriculou o aluno ${data.name} (${enrollmentNumber}).`,
+    metadata: { enrollmentNumber, waitlistCreated },
+  });
 
   return Response.json(
     {

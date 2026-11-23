@@ -3,6 +3,7 @@ import { and, count, eq } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { classrooms, students, teacherAssignments } from "@/lib/db/schema";
 import { authorizeSchoolRequest, invalidPayload } from "@/lib/schools/api-access";
+import { logAudit } from "@/lib/schools/audit";
 import {
   classroomOccupancyMap,
   validatePhysicalRoomCapacity,
@@ -100,6 +101,17 @@ export async function PATCH(request: Request, { params }: Context) {
     })
     .where(eq(classrooms.id, classroomId));
 
+  await logAudit({
+    schoolId: id,
+    actorUserId: access.session.user.id,
+    actorName: access.session.user.name,
+    actorRole: access.role ?? "desconhecido",
+    action: "classroom.update",
+    entityType: "classroom",
+    entityId: classroomId,
+    summary: `Atualizou a turma ${nextName} (${nextGrade ?? "série"}, ${nextShift ?? "turno"}, ${nextCapacity} vagas, ${nextStatus}).`,
+  });
+
   return Response.json({ ok: true });
 }
 
@@ -136,5 +148,15 @@ export async function DELETE(_request: Request, { params }: Context) {
   }
 
   await db.delete(classrooms).where(eq(classrooms.id, classroomId));
+  await logAudit({
+    schoolId: id,
+    actorUserId: access.session.user.id,
+    actorName: access.session.user.name,
+    actorRole: access.role ?? "desconhecido",
+    action: "classroom.delete",
+    entityType: "classroom",
+    entityId: classroomId,
+    summary: `Excluiu a turma ${classroom.name}.`,
+  });
   return Response.json({ ok: true });
 }

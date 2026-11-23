@@ -6,6 +6,7 @@ import { user } from "@/lib/db/auth-schema";
 import { db } from "@/lib/db/client";
 import { schoolMembers } from "@/lib/db/schema";
 import { authorizeSchoolRequest, invalidPayload } from "@/lib/schools/api-access";
+import { logAudit } from "@/lib/schools/audit";
 import {
   addMemberSchema,
   updateMemberSchema,
@@ -95,6 +96,17 @@ export async function POST(request: Request, { params }: Context) {
     role: data.role,
   });
 
+  await logAudit({
+    schoolId: id,
+    actorUserId: access.session.user.id,
+    actorName: access.session.user.name,
+    actorRole: access.role ?? "desconhecido",
+    action: "member.create",
+    entityType: "school_member",
+    entityId: membershipId,
+    summary: `Adicionou ${data.name} (${data.email}) como ${data.role}.`,
+  });
+
   return Response.json(
     { id: membershipId, temporaryPassword },
     { status: 201 },
@@ -137,6 +149,17 @@ export async function PATCH(request: Request, { params }: Context) {
     .set({ role: parsed.data.role })
     .where(eq(schoolMembers.id, membershipId));
 
+  await logAudit({
+    schoolId: id,
+    actorUserId: access.session.user.id,
+    actorName: access.session.user.name,
+    actorRole: access.role ?? "desconhecido",
+    action: "member.update_role",
+    entityType: "school_member",
+    entityId: membershipId,
+    summary: `Alterou o perfil do vínculo ${membershipId} para ${parsed.data.role}.`,
+  });
+
   return Response.json({ ok: true });
 }
 
@@ -166,6 +189,17 @@ export async function DELETE(request: Request, { params }: Context) {
   }
 
   await db.delete(schoolMembers).where(eq(schoolMembers.id, membershipId));
+
+  await logAudit({
+    schoolId: id,
+    actorUserId: access.session.user.id,
+    actorName: access.session.user.name,
+    actorRole: access.role ?? "desconhecido",
+    action: "member.remove",
+    entityType: "school_member",
+    entityId: membershipId,
+    summary: `Removeu o vínculo ${membershipId} (${membership.role}) da escola.`,
+  });
 
   return Response.json({ ok: true });
 }

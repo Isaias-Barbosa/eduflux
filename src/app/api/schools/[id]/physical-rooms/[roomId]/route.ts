@@ -3,6 +3,7 @@ import { and, count, eq } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { classrooms, physicalRooms } from "@/lib/db/schema";
 import { authorizeSchoolRequest, invalidPayload } from "@/lib/schools/api-access";
+import { logAudit } from "@/lib/schools/audit";
 import { updatePhysicalRoomSchema } from "@/lib/schools/management-validation";
 
 type Context = {
@@ -72,6 +73,17 @@ export async function PATCH(request: Request, { params }: Context) {
     .set({ name, capacity, squareMeters })
     .where(eq(physicalRooms.id, roomId));
 
+  await logAudit({
+    schoolId: id,
+    actorUserId: access.session.user.id,
+    actorName: access.session.user.name,
+    actorRole: access.role ?? "desconhecido",
+    action: "room.update",
+    entityType: "physical_room",
+    entityId: roomId,
+    summary: `Atualizou a sala física ${name} (${capacity} cadeiras).`,
+  });
+
   return Response.json({ ok: true });
 }
 
@@ -97,5 +109,15 @@ export async function DELETE(_request: Request, { params }: Context) {
   }
 
   await db.delete(physicalRooms).where(eq(physicalRooms.id, roomId));
+  await logAudit({
+    schoolId: id,
+    actorUserId: access.session.user.id,
+    actorName: access.session.user.name,
+    actorRole: access.role ?? "desconhecido",
+    action: "room.delete",
+    entityType: "physical_room",
+    entityId: roomId,
+    summary: `Excluiu a sala física ${room.name}.`,
+  });
   return Response.json({ ok: true });
 }

@@ -9,6 +9,7 @@ import {
   teachers,
 } from "@/lib/db/schema";
 import { authorizeSchoolRequest, invalidPayload } from "@/lib/schools/api-access";
+import { logAudit } from "@/lib/schools/audit";
 import { updateTeacherSchema } from "@/lib/schools/management-validation";
 import { validateAssignments } from "@/lib/schools/teacher-assignments";
 
@@ -118,6 +119,17 @@ export async function PATCH(request: Request, { params }: Context) {
     }
   });
 
+  await logAudit({
+    schoolId: id,
+    actorUserId: access.session.user.id,
+    actorName: access.session.user.name,
+    actorRole: access.role ?? "desconhecido",
+    action: "teacher.update",
+    entityType: "teacher",
+    entityId: teacherId,
+    summary: `Atualizou o professor ${data.name ?? teacher.name}.`,
+  });
+
   return Response.json({ ok: true });
 }
 
@@ -142,6 +154,17 @@ export async function DELETE(_request: Request, { params }: Context) {
         ),
       );
     await tx.delete(user).where(eq(user.id, teacher.userId));
+  });
+
+  await logAudit({
+    schoolId: id,
+    actorUserId: access.session.user.id,
+    actorName: access.session.user.name,
+    actorRole: access.role ?? "desconhecido",
+    action: "teacher.delete",
+    entityType: "teacher",
+    entityId: teacherId,
+    summary: `Removeu o professor ${teacher.name} (${teacher.email}).`,
   });
 
   return Response.json({ ok: true });

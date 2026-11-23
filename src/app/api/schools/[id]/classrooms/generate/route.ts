@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { classrooms } from "@/lib/db/schema";
 import { authorizeSchoolRequest, invalidPayload } from "@/lib/schools/api-access";
+import { logAudit } from "@/lib/schools/audit";
 import { validatePhysicalRoomCapacity } from "@/lib/schools/classroom-capacity";
 import { generateClassroomsSchema } from "@/lib/schools/management-validation";
 
@@ -81,6 +82,17 @@ export async function POST(request: Request, { params }: Context) {
       rows.push({ id: classroomId, name });
     }
     return rows;
+  });
+
+  await logAudit({
+    schoolId: id,
+    actorUserId: access.session.user.id,
+    actorName: access.session.user.name,
+    actorRole: access.role ?? "desconhecido",
+    action: "classroom.generate",
+    entityType: "classroom",
+    summary: `Gerou ${created.length} turma(s)-base de ${grade} (${data.shift}, ${data.schoolYear}, ${data.capacity} vagas).`,
+    metadata: { quantity: created.length, grade, shift: data.shift, schoolYear: data.schoolYear },
   });
 
   return Response.json({ created }, { status: 201 });

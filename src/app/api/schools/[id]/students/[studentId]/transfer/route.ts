@@ -7,6 +7,7 @@ import {
   students,
 } from "@/lib/db/schema";
 import { authorizeSchoolRequest, invalidPayload } from "@/lib/schools/api-access";
+import { logAudit } from "@/lib/schools/audit";
 import { validateClassroomEnrollment } from "@/lib/schools/classroom-capacity";
 import { buildHistorySnapshot } from "@/lib/schools/history";
 import { transferStudentSchema } from "@/lib/schools/management-validation";
@@ -87,6 +88,18 @@ export async function PATCH(
       historyIssuedAt: snapshot ? new Date() : null,
       createdBy: access.session.user.id,
     });
+  });
+
+  await logAudit({
+    schoolId: id,
+    actorUserId: access.session.user.id,
+    actorName: access.session.user.name,
+    actorRole: access.role ?? "desconhecido",
+    action: "student.transfer",
+    entityType: "student",
+    entityId: studentId,
+    summary: `Registrou ${data.status} para o aluno ${student.name}.`,
+    metadata: { status: data.status, destinationSchool: data.destinationSchool ?? null },
   });
 
   return Response.json({
