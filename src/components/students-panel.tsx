@@ -15,6 +15,7 @@ import { useState, type FormEvent } from "react";
 
 import type {
   ClassroomItem,
+  HistoryRecordItem,
   SchoolCapabilities,
   StudentItem,
 } from "./school-types";
@@ -51,6 +52,117 @@ const STATUS_LABELS: Record<string, string> = {
   pendente: "Pendente",
   validado: "Validado",
 };
+
+type HistorySnapshot = Record<string, unknown>;
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function textValue(value: unknown): string {
+  if (value === null || value === undefined || value === "") return "—";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+function todayDateInput(): string {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${now.getFullYear()}-${month}-${day}`;
+}
+
+function formatTransferDate(value: string): string {
+  const [year, month, day] = value.slice(0, 10).split("-");
+  return year && month && day ? `${day}/${month}/${year}` : value;
+}
+
+function formatHistoryText(snapshot: HistorySnapshot): string {
+  const school = asRecord(snapshot.school);
+  const rules = asRecord(snapshot.rules);
+  const student = asRecord(snapshot.student);
+  const assessments = Array.isArray(snapshot.assessments)
+    ? (snapshot.assessments as Array<Record<string, unknown>>)
+    : [];
+  const occurrences = Array.isArray(snapshot.occurrences)
+    ? (snapshot.occurrences as Array<Record<string, unknown>>)
+    : [];
+
+  const lines = [
+    "HISTÓRICO ESCOLAR",
+    `Escola: ${textValue(school.name)}`,
+    `Razão social: ${textValue(school.legalName)}`,
+    `CNPJ: ${textValue(school.cnpj)}`,
+    `INEP: ${textValue(school.inepCode)}`,
+    `Localização: ${textValue(school.city)}/${textValue(school.state)}`,
+    `Diretor(a): ${textValue(school.directorName)}`,
+    `Secretaria: ${textValue(school.secretaryName)}`,
+    "",
+    `Aluno(a): ${textValue(student.name)}`,
+    `Matrícula: ${textValue(student.enrollmentNumber)}`,
+    `Nascimento: ${textValue(student.birthDate)}`,
+    `Naturalidade: ${textValue(student.birthCity)}/${textValue(student.birthState)}`,
+    `Filiação: ${textValue(student.motherName)} e ${textValue(student.fatherName)}`,
+    `Série/turma: ${textValue(student.grade)} · ${textValue(student.classroomName)}`,
+    `Turno: ${textValue(student.shift)}`,
+    `Situação: ${textValue(student.status)}`,
+    "",
+    `Média de aprovação: ${textValue(rules.passingGrade)}`,
+    `Bimestres: ${textValue(rules.bimesters)}`,
+    `Frequência mínima: ${textValue(rules.minFrequency)}%`,
+    "",
+    "AVALIAÇÕES",
+  ];
+
+  const byBimester = new Map<string, Array<Record<string, unknown>>>();
+  for (const item of assessments) {
+    const key = textValue(item.bimester);
+    const group = byBimester.get(key) ?? [];
+    group.push(item);
+    byBimester.set(key, group);
+  }
+
+  const bimesters = [...byBimester.keys()].sort((a, b) => {
+    const first = Number(a);
+    const second = Number(b);
+    return Number.isFinite(first) && Number.isFinite(second)
+      ? first - second
+      : a.localeCompare(b);
+  });
+
+  if (bimesters.length === 0) {
+    lines.push("Nenhuma avaliação registrada.");
+  } else {
+    for (const bimester of bimesters) {
+      lines.push("", `Bimestre: ${bimester}`);
+      for (const item of byBimester.get(bimester) ?? []) {
+        lines.push(
+          `  Disciplina: ${textValue(item.discipline)} · Avaliação: ${textValue(item.assessment)} · Nota: ${textValue(item.grade)} · Peso: ${textValue(item.weight)} · Presença: ${textValue(item.presence)}`,
+        );
+      }
+    }
+  }
+
+  if (occurrences.length > 0) {
+    lines.push("", "OCORRÊNCIAS");
+    for (const item of occurrences) {
+      lines.push(
+        `  Data: ${textValue(item.date)} · Tipo: ${textValue(item.type)} · Severidade: ${textValue(item.severity)} · Descrição: ${textValue(item.description)}`,
+      );
+    }
+  }
+
+  const emittedAt = new Date(String(snapshot.emittedAt ?? ""));
+  lines.push(
+    "",
+    `Emitido em: ${Number.isNaN(emittedAt.getTime()) ? textValue(snapshot.emittedAt) : emittedAt.toLocaleString("pt-BR")}`,
+    `Emitido por: ${textValue(snapshot.issuerName)}`,
+  );
+
+  return lines.join("\n");
+}
 
 type StudentForm = {
   name: string;
@@ -246,6 +358,12 @@ export function StudentsPanel({
   const [transferFor, setTransferFor] = useState<string | null>(null);
   const [transferStatus, setTransferStatus] = useState("transferido");
   const [transferClassroom, setTransferClassroom] = useState("");
+  const [transferDestination, setTransferDestination] = useState("");
+  const [transferDate, setTransferDate] = useState(todayDateInput);
+  const [transferReason, setTransferReason] = useState("");
+  const [transferIssueHistory, setTransferIssueHistory] = useState(false);
+  const [historyFor, setHistoryFor] = useState<string | null>(null);
+  const [historyText, setHistoryText] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
@@ -343,6 +461,7 @@ export function StudentsPanel({
             schoolHistoryStatus: "pendente",
             residenceProofStatus: "pendente",
             docsStatus: "pendente",
+            transferRecords: [],
           } as StudentItem,
         ]);
         setNotice(`Aluno matriculado: ${data.enrollmentNumber}`);
@@ -415,8 +534,20 @@ export function StudentsPanel({
   async function saveTransfer(event: FormEvent) {
     event.preventDefault();
     if (!transferFor) return;
+
+    const destinationSchool = transferDestination.trim();
+    if (transferStatus === "transferido" && !destinationSchool) {
+      setError("Informe a escola de destino na transferência.");
+      return;
+    }
+
     setSaving(true);
     setError("");
+    setNotice("");
+
+    const reason = transferReason.trim();
+    const now = new Date().toISOString();
+    const transferDateTime = transferDate || now.slice(0, 10);
 
     try {
       const response = await fetch(
@@ -427,35 +558,114 @@ export function StudentsPanel({
           body: JSON.stringify({
             status: transferStatus,
             classroomId: transferClassroom || null,
+            destinationSchool,
+            transferDate: transferDateTime,
+            reason,
+            issueHistory: transferIssueHistory,
           }),
         },
       );
-      const data = (await response.json()) as { error?: string };
+      const data = (await response.json()) as {
+        error?: string;
+        ok?: boolean;
+        status?: StudentItem["status"];
+        historyIssued?: boolean;
+      };
       if (!response.ok) {
         setError(data.error ?? "Não foi possível atualizar a situação.");
         return;
       }
 
+      const historyIssued = Boolean(data.historyIssued);
+      const record: HistoryRecordItem = {
+        id:
+          typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+            ? crypto.randomUUID()
+            : `local-${Date.now()}`,
+        destinationSchool,
+        transferDate: transferDateTime,
+        reason: reason || null,
+        note: null,
+        historyIssuedAt: historyIssued ? now : null,
+        createdAt: now,
+      };
       const classroom = classrooms.find((item) => item.id === transferClassroom);
       commit(
         items.map((student) =>
           student.id === transferFor
             ? {
                 ...student,
-                status: transferStatus as StudentItem["status"],
+                status: (data.status ?? transferStatus) as StudentItem["status"],
                 classroomId: transferClassroom || null,
                 classroomName: classroom?.name ?? null,
+                transferRecords: [record, ...(student.transferRecords ?? [])],
               }
             : student,
         ),
       );
+      setTransferDestination("");
+      setTransferDate(todayDateInput());
+      setTransferReason("");
+      setTransferIssueHistory(false);
       setTransferFor(null);
-      setNotice("Situação escolar atualizada.");
+      setNotice(
+        data.historyIssued
+          ? "Situação escolar atualizada e histórico escolar emitido."
+          : "Situação escolar atualizada.",
+      );
       router.refresh();
     } catch {
       setError("Não foi possível Conectar ao servidor.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function issueStudentHistory(studentId: string) {
+    setSaving(true);
+    setError("");
+    setNotice("");
+
+    try {
+      const response = await fetch(
+        `/api/schools/${schoolId}/students/${studentId}/history`,
+        { method: "POST" },
+      );
+      const data = (await response.json()) as {
+        error?: string;
+        snapshot?: HistorySnapshot;
+        issuedAt?: string;
+      };
+      if (!response.ok) {
+        setError(data.error ?? "Não foi possível emitir o histórico escolar.");
+        return;
+      }
+      if (!data.snapshot) {
+        setError("O servidor não devolveu o histórico escolar.");
+        return;
+      }
+
+      setHistoryFor(studentId);
+      setHistoryText(formatHistoryText(data.snapshot));
+      setNotice("Histórico escolar emitido.");
+    } catch {
+      setError("Não foi possível Conectar ao servidor.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function copyHistory() {
+    if (!historyText) return;
+    try {
+      if (!navigator.clipboard) {
+        setError("Área de transferência indisponível neste navegador.");
+        return;
+      }
+      await navigator.clipboard.writeText(historyText);
+      setNotice("Histórico copiado.");
+    } catch {
+      setError("Não foi possível copiar o histórico.");
     }
   }
 
@@ -660,6 +870,15 @@ export function StudentsPanel({
                 {student.emergencyPhone ? ` · Emergência: ${student.emergencyPhone}` : ""}
               </p>
 
+              {student.transferRecords?.[0] ? (
+                <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                  Última transferência:{" "}
+                  {student.transferRecords[0].destinationSchool || "Escola não informada"} ·{" "}
+                  {formatTransferDate(student.transferRecords[0].transferDate)} · Histórico:{" "}
+                  {student.transferRecords[0].historyIssuedAt ? "emitido" : "não emitido"}
+                </p>
+              ) : null}
+
               <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
                 {capabilities.createStudents && (
                   <button type="button" className={secondaryButton} onClick={() => startEdit(student)}>
@@ -690,9 +909,22 @@ export function StudentsPanel({
                       setTransferFor(student.id);
                       setTransferStatus("transferido");
                       setTransferClassroom(student.classroomId ?? "");
+                      setTransferDestination("");
+                      setTransferDate(todayDateInput());
+                      setTransferReason("");
+                      setTransferIssueHistory(false);
                     }}
                   >
                     Transferir / concluir
+                  </button>
+                )}
+                {capabilities.issueHistory && (
+                  <button
+                    type="button"
+                    className={secondaryButton}
+                    onClick={() => issueStudentHistory(student.id)}
+                  >
+                    Emitir histórico
                   </button>
                 )}
                 {capabilities.manageStudents && (
@@ -757,11 +989,73 @@ export function StudentsPanel({
                     options={[["transferido", "Transferido"], ["concluido", "Concluído"]]}
                   />
                   <SelectField label="Turma" value={transferClassroom} onChange={setTransferClassroom} options={classroomOptions} />
+                  <Field
+                    label="Escola de destino"
+                    value={transferDestination}
+                    onChange={setTransferDestination}
+                    placeholder="Nome da escola de destino"
+                    required={transferStatus === "transferido"}
+                    className="sm:col-span-2"
+                  />
+                  <Field
+                    label="Data da transferência"
+                    type="date"
+                    value={transferDate}
+                    onChange={setTransferDate}
+                    className="sm:col-span-2"
+                  />
+                  <label className="block sm:col-span-2">
+                    <span className="text-xs font-semibold text-slate-600">Motivo</span>
+                    <textarea
+                      rows={3}
+                      value={transferReason}
+                      onChange={(event) => setTransferReason(event.target.value)}
+                      placeholder="Motivo da transferência ou conclusão"
+                      className={`${inputClass} resize-y`}
+                    />
+                  </label>
+                  <label className="flex items-center gap-2 text-xs font-semibold text-slate-600 sm:col-span-2">
+                    <input
+                      type="checkbox"
+                      checked={transferIssueHistory}
+                      onChange={(event) => setTransferIssueHistory(event.target.checked)}
+                      className="h-4 w-4 accent-emerald-600"
+                    />
+                    Emitir histórico escolar nesta transferência
+                  </label>
                   <div className="flex gap-2 sm:col-span-2">
                     <button type="submit" disabled={saving} className={primaryButton}>Confirmar</button>
                     <button type="button" className={secondaryButton} onClick={() => setTransferFor(null)}>Cancelar</button>
                   </div>
                 </form>
+              )}
+
+              {historyFor === student.id && (
+                <div className="mt-3 space-y-3 rounded-lg bg-slate-50 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs font-semibold text-slate-800">
+                      Histórico escolar de {student.name}
+                    </p>
+                    <div className="flex gap-2">
+                      <button type="button" className={secondaryButton} onClick={copyHistory}>
+                        Copiar
+                      </button>
+                      <button
+                        type="button"
+                        className={secondaryButton}
+                        onClick={() => {
+                          setHistoryFor(null);
+                          setHistoryText("");
+                        }}
+                      >
+                        Fechar
+                      </button>
+                    </div>
+                  </div>
+                  <pre className="max-h-80 overflow-auto rounded-lg border border-slate-200 bg-white p-3 text-xs leading-relaxed whitespace-pre-wrap text-slate-700">
+                    {historyText}
+                  </pre>
+                </div>
               )}
             </div>
           ))

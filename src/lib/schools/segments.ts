@@ -33,8 +33,26 @@ export type SchoolSegment = keyof typeof SEGMENTS;
 
 export const SEGMENT_IDS = Object.keys(SEGMENTS) as SchoolSegment[];
 
+/** Identificadores estáveis dos módulos habilitáveis por escola. */
+export const SCHOOL_MODULE_IDS = [
+  "turmas",
+  "criancas",
+  "diario",
+  "desenvolvimento",
+  "eventos",
+  "comunicados",
+  "alunos",
+  "disciplinas",
+  "notas",
+  "frequencia",
+  "calendario",
+  "preparacao",
+] as const;
+
+export type SchoolModuleId = (typeof SCHOOL_MODULE_IDS)[number];
+
 export type SchoolModule = {
-  id: string;
+  id: SchoolModuleId;
   name: string;
   description: string;
 };

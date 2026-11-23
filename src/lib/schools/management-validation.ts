@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { onlyDigits } from "./cep";
 import { FACILITY_OPTIONS, SHIFT_OPTIONS } from "./options";
+import { SCHOOL_MODULE_IDS } from "./segments";
 
 const requiredText = (label: string, max = 120) =>
   z
@@ -70,6 +71,30 @@ const raceValues = [
 ] as const;
 const statusValues = ["ativo", "transferido", "concluido"] as const;
 const documentStatusValues = ["pendente", "validado"] as const;
+const rotationValues = ["alunos", "professor"] as const;
+const occurrenceTypeValues = [
+  "pedagogica",
+  "disciplinar",
+  "frequencia",
+  "saude",
+  "outro",
+] as const;
+const occurrenceSeverityValues = ["baixa", "media", "alta"] as const;
+const assessmentTypeValues = [
+  "avaliacao",
+  "recuperacao",
+  "trabalho",
+  "prova",
+] as const;
+
+const isoDateField = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Informe uma data válida")
+  .refine((value) => {
+    const date = new Date(`${value}T00:00:00`);
+    return !Number.isNaN(date.getTime());
+  }, "Data inválida");
 
 export const STUDENT_SEX_OPTIONS = sexValues;
 export const STUDENT_RACE_OPTIONS = raceValues;
@@ -131,7 +156,31 @@ export const createAssessmentSchema = z.object({
     .number("Informe a nota")
     .min(0, "Nota mínima: 0")
     .max(10, "Nota máxima: 10"),
+  bimester: z.coerce
+    .number("Informe o bimestre")
+    .int("Bimestre inválido")
+    .min(1, "Bimestre mínimo: 1")
+    .max(6, "Bimestre máximo: 6")
+    .default(1),
+  weight: z.coerce
+    .number("Informe o peso")
+    .min(0.1, "Peso mínimo: 0,1")
+    .max(10, "Peso máximo: 10")
+    .default(1),
+  assessmentType: z.enum(assessmentTypeValues).default("avaliacao"),
   presence: z.enum(["presente", "falta"]).default("presente"),
+});
+
+export const updateAssessmentSchema = createAssessmentSchema.partial().refine(
+  (value) => Object.keys(value).length > 0,
+  "Informe ao menos um campo para atualizar",
+);
+
+export const createOccurrenceSchema = z.object({
+  occurrenceDate: isoDateField,
+  type: z.enum(occurrenceTypeValues).default("pedagogica"),
+  severity: z.enum(occurrenceSeverityValues).default("baixa"),
+  description: requiredText("Descrição da ocorrência", 1000),
 });
 
 export const reviewDocumentsSchema = z.object({
@@ -140,15 +189,40 @@ export const reviewDocumentsSchema = z.object({
   residenceProofStatus: z.enum(documentStatusValues),
 });
 
-export const transferStudentSchema = z.object({
-  status: z.enum(["transferido", "concluido"]),
-  classroomId: z.string().trim().nullable().default(null),
-  note: optionalRawText(255),
-});
+export const transferStudentSchema = z
+  .object({
+    status: z.enum(["transferido", "concluido"]),
+    classroomId: z.string().trim().nullable().default(null),
+    note: optionalRawText(255),
+    destinationSchool: optionalRawText(160),
+    transferDate: z.union([z.literal(""), isoDateField]).default(""),
+    reason: optionalRawText(500),
+    issueHistory: z.boolean().default(false),
+  })
+  .superRefine((value, context) => {
+    if (value.status === "transferido" && !value.destinationSchool?.trim()) {
+      context.addIssue({
+        code: "custom",
+        path: ["destinationSchool"],
+        message: "Informe a escola de destino na transferência.",
+      });
+    }
+  });
 
 export const createClassroomSchema = z.object({
   name: requiredText("Nome da sala", 80),
   shift: optionalText(40),
+});
+
+/**
+ * Cada vínculo representa uma sala/disciplina e os alunos atendidos nela.
+ * `classroomId` e `discipline` isolados são mantidos para compatibilidade com
+ * o formulário anterior; quando não há vínculos, um é derivado deles.
+ */
+export const teacherAssignmentSchema = z.object({
+  classroomId: requiredText("Sala do professor", 120),
+  discipline: optionalText(120),
+  studentIds: z.array(z.string().trim()).default([]),
 });
 
 export const createTeacherSchema = z.object({
@@ -156,6 +230,13 @@ export const createTeacherSchema = z.object({
   email: z.string().trim().email("E-mail inválido"),
   discipline: optionalText(120),
   classroomId: z.union([z.literal(""), z.string().trim()]).default(""),
+  assignments: z.array(teacherAssignmentSchema).default([]),
+});
+
+export const updateTeacherSchema = z.object({
+  name: requiredText("Nome do professor").optional(),
+  email: z.string().trim().email("E-mail inválido").optional(),
+  assignments: z.array(teacherAssignmentSchema).optional(),
 });
 
 export const schoolRoleValues = [
@@ -203,4 +284,22 @@ export const updateSchoolProfileSchema = z.object({
     .regex(/^(\d{1,4})?$/, "Número de salas inválido")
     .default(""),
   facilities: z.array(z.enum([...FACILITY_OPTIONS])).default([]),
+  passingGrade: z.coerce
+    .number("Informe a média de aprovação")
+    .min(0, "Média mínima: 0")
+    .max(10, "Média máxima: 10")
+    .default(6),
+  bimesters: z.coerce
+    .number("Informe a quantidade de bimestres")
+    .int("Bimestre inválido")
+    .min(1, "Mínimo de 1 bimestre")
+    .max(6, "Máximo de 6 bimestres")
+    .default(4),
+  minFrequency: z.coerce
+    .number("Informe a frequência mínima")
+    .min(0, "Frequência mínima: 0")
+    .max(100, "Frequência máxima: 100")
+    .default(75),
+  rotationModel: z.enum(rotationValues).default("alunos"),
+  enabledModules: z.array(z.enum([...SCHOOL_MODULE_IDS])).default([]),
 });

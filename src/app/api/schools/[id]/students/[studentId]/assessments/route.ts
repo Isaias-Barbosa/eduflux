@@ -77,6 +77,9 @@ export async function POST(request: Request, { params }: Context) {
     discipline: parsed.data.discipline,
     assessment: parsed.data.assessment,
     grade: parsed.data.grade,
+    bimester: parsed.data.bimester,
+    weight: parsed.data.weight,
+    assessmentType: parsed.data.assessmentType,
     presence: parsed.data.presence,
     recordedBy: access.session.user.id,
   });

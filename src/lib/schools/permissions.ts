@@ -30,22 +30,25 @@ export const ROLE_DESCRIPTIONS: Record<SchoolRole, string> = {
   owner: "Acesso a todas as escolas da plataforma.",
   admin: "Acesso total: criar, editar, excluir e gerenciar permissões.",
   secretaria:
-    "Criar, editar, matricular e transferir alunos; validar documentação e responder pelo Censo Escolar.",
+    "Matrículas, transferências, documentação, histórico escolar e Censo Escolar.",
   auxiliar:
     "Digitação inicial dos dados e atualização de telefones e endereços.",
-  direcao: "Visualizar dados completos e emitir relatórios.",
-  professor: "Visualizar a própria turma e lançar notas e frequência.",
-  responsavel: "Visualizar o boletim e solicitar atualização cadastral.",
+  direcao: "Acompanhar indicadores, ocorrências e emitir relatórios.",
+  professor:
+    "Diário de classe das próprias turmas: chamada, notas, boletins e ocorrências.",
+  responsavel: "Acompanhar o boletim e solicitar atualização cadastral.",
 };
 
 export const PERMISSIONS = [
   "school:read",
   "school:update",
+  "module:manage",
   "member:read",
   "member:manage",
   "classroom:create",
   "teacher:read",
   "teacher:create",
+  "teacher:update",
   "student:read",
   "student:create",
   "student:update",
@@ -60,6 +63,11 @@ export const PERMISSIONS = [
   "update-request:review",
   "grade:read",
   "grade:write",
+  "grade:update",
+  "occurrence:read",
+  "occurrence:write",
+  "history:read",
+  "history:issue",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -81,6 +89,9 @@ const OPERATIONAL_ACCESS: Permission[] = [
   "update-request:read",
   "update-request:review",
   "classroom:create",
+  "occurrence:read",
+  "history:read",
+  "history:issue",
 ];
 
 /**
@@ -107,12 +118,17 @@ export const ROLE_PERMISSIONS: Record<SchoolRole, readonly Permission[]> = {
     "report:read",
     "student:export",
     "update-request:read",
+    "occurrence:read",
+    "history:read",
   ],
   professor: [
     "school:read",
     "student:read",
     "grade:read",
     "grade:write",
+    "grade:update",
+    "occurrence:read",
+    "occurrence:write",
   ],
   responsavel: [
     "student:read",
@@ -160,10 +176,12 @@ export async function hasPermission(
 
 export type SchoolCapabilities = Record<
   | "manageSchool"
+  | "manageModules"
   | "manageMembers"
   | "manageStudents"
   | "createClassrooms"
   | "createTeachers"
+  | "updateTeachers"
   | "createStudents"
   | "enrollStudents"
   | "transferStudents"
@@ -172,7 +190,12 @@ export type SchoolCapabilities = Record<
   | "viewReports"
   | "reviewRequests"
   | "requestUpdate"
-  | "writeGrades",
+  | "writeGrades"
+  | "updateGrades"
+  | "writeOccurrences"
+  | "viewOccurrences"
+  | "viewHistory"
+  | "issueHistory",
   boolean
 >;
 
@@ -186,10 +209,12 @@ export async function getSchoolCapabilities(
 
   return {
     manageSchool: can("school:update"),
+    manageModules: can("module:manage"),
     manageMembers: can("member:manage"),
     manageStudents: can("student:delete"),
     createClassrooms: can("classroom:create"),
     createTeachers: can("teacher:create"),
+    updateTeachers: can("teacher:update"),
     createStudents: can("student:create"),
     enrollStudents: can("student:enroll"),
     transferStudents: can("student:transfer"),
@@ -199,5 +224,10 @@ export async function getSchoolCapabilities(
     reviewRequests: can("update-request:review"),
     requestUpdate: can("update-request:create"),
     writeGrades: can("grade:write"),
+    updateGrades: can("grade:update"),
+    writeOccurrences: can("occurrence:write"),
+    viewOccurrences: can("occurrence:read"),
+    viewHistory: can("history:read"),
+    issueHistory: can("history:issue"),
   };
 }

@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import {
   ArrowLeft,
   BadgeCheck,
@@ -7,6 +7,7 @@ import {
   ClipboardList,
   DoorOpen,
   GraduationCap,
+  Lock,
   Mail,
   MapPin,
   Phone,
@@ -19,14 +20,22 @@ import { notFound } from "next/navigation";
 import { GuardianPanel } from "@/components/guardian-panel";
 import { MyClassroomPanel } from "@/components/my-classroom-panel";
 import { SchoolManagement } from "@/components/school-management";
+import type {
+  HistoryRecordItem,
+  SchoolRules,
+} from "@/components/school-types";
 import { user } from "@/lib/db/auth-schema";
 import { db } from "@/lib/db/client";
 import {
   classrooms,
   schools,
   studentAssessments,
+  studentOccurrences,
+  studentTransferRecords,
   students,
   studentUpdateRequests,
+  teacherAssignments,
+  teacherStudents,
   teachers,
   schoolMembers,
 } from "@/lib/db/schema";
@@ -38,7 +47,7 @@ import {
   ROLE_LABELS,
 } from "@/lib/schools/permissions";
 import { SEGMENTS, getModules } from "@/lib/schools/segments";
-import { canAccessStudent } from "@/lib/schools/student-scope";
+import { canAccessStudent, getTeacherContext } from "@/lib/schools/student-scope";
 import { requireUser } from "@/lib/session";
 
 export const instant = false;
@@ -77,6 +86,43 @@ export default async function SchoolDetailsPage({
     .where(eq(teachers.schoolId, id))
     .orderBy(asc(teachers.name));
 
+  const teacherIds = teacherRows.map((row) => row.teacher.id);
+  const assignmentRows =
+    teacherIds.length > 0
+      ? await db
+          .select({
+            id: teacherAssignments.id,
+            teacherId: teacherAssignments.teacherId,
+            classroomId: teacherAssignments.classroomId,
+            classroomName: classrooms.name,
+            discipline: teacherAssignments.discipline,
+          })
+          .from(teacherAssignments)
+          .innerJoin(classrooms, eq(teacherAssignments.classroomId, classrooms.id))
+          .where(inArray(teacherAssignments.teacherId, teacherIds))
+          .orderBy(asc(classrooms.name), asc(teacherAssignments.discipline))
+      : [];
+
+  const assignmentIds = assignmentRows.map((row) => row.id);
+  const assignmentStudentRows =
+    assignmentIds.length > 0
+      ? await db
+          .select({
+            assignmentId: teacherStudents.assignmentId,
+            studentId: teacherStudents.studentId,
+            studentName: students.name,
+          })
+          .from(teacherStudents)
+          .innerJoin(students, eq(teacherStudents.studentId, students.id))
+          .where(inArray(teacherStudents.assignmentId, assignmentIds))
+      : [];
+
+  const transferRows = await db
+    .select()
+    .from(studentTransferRecords)
+    .where(eq(studentTransferRecords.schoolId, id))
+    .orderBy(desc(studentTransferRecords.createdAt));
+
   const allStudentRows = await db
     .select({ student: students, classroomName: classrooms.name })
     .from(students)
@@ -104,6 +150,15 @@ export default async function SchoolDetailsPage({
           .from(studentAssessments)
           .where(eq(studentAssessments.schoolId, id))
           .orderBy(asc(studentAssessments.createdAt))
+      : [];
+
+  const occurrenceRows =
+    visibleStudentIds.length > 0
+      ? await db
+          .select()
+          .from(studentOccurrences)
+          .where(eq(studentOccurrences.schoolId, id))
+          .orderBy(desc(studentOccurrences.occurrenceDate))
       : [];
 
   const memberRows = await db
@@ -150,14 +205,25 @@ export default async function SchoolDetailsPage({
           .where(eq(studentUpdateRequests.schoolId, id))
           .orderBy(asc(studentUpdateRequests.createdAt));
 
-  const [myTeacher] = await db
-    .select()
-    .from(teachers)
-    .where(and(eq(teachers.schoolId, id), eq(teachers.userId, session.user.id)))
-    .limit(1);
+  const myTeacherContext =
+    role === "professor"
+      ? await getTeacherContext(session.user.id, id)
+      : null;
 
   const segment = SEGMENTS[school.segment];
   const modules = getModules(school.segment);
+  const rules: SchoolRules = {
+    passingGrade: school.passingGrade,
+    bimesters: school.bimesters,
+    minFrequency: school.minFrequency,
+    rotationModel: school.rotationModel,
+    enabledModules: school.enabledModules,
+  };
+  const enabledModuleIds = new Set(
+    rules.enabledModules.length > 0
+      ? rules.enabledModules
+      : modules.map((module) => module.id),
+  );
   const address = [
     `${school.street}, ${school.number}`,
     school.complement,
@@ -175,7 +241,33 @@ export default async function SchoolDetailsPage({
     discipline: teacher.discipline,
     classroomId: teacher.classroomId,
     classroomName,
+    assignments: assignmentRows
+      .filter((assignment) => assignment.teacherId === teacher.id)
+      .map((assignment) => ({
+        id: assignment.id,
+        classroomId: assignment.classroomId,
+        classroomName: assignment.classroomName,
+        discipline: assignment.discipline,
+        students: assignmentStudentRows
+          .filter((link) => link.assignmentId === assignment.id)
+          .map((link) => ({ id: link.studentId, name: link.studentName })),
+      })),
   }));
+
+  const transfersByStudent = new Map<string, HistoryRecordItem[]>();
+  for (const record of transferRows) {
+    const list = transfersByStudent.get(record.studentId) ?? [];
+    list.push({
+      id: record.id,
+      destinationSchool: record.destinationSchool,
+      transferDate: record.transferDate,
+      reason: record.reason,
+      note: record.note,
+      historyIssuedAt: record.historyIssuedAt?.toISOString() ?? null,
+      createdAt: record.createdAt.toISOString(),
+    });
+    transfersByStudent.set(record.studentId, list);
+  }
 
   const studentItems = studentRows.map(({ student, classroomName }) => ({
     id: student.id,
@@ -210,6 +302,7 @@ export default async function SchoolDetailsPage({
     schoolHistoryStatus: student.schoolHistoryStatus,
     residenceProofStatus: student.residenceProofStatus,
     docsStatus: student.docsStatus,
+    transferRecords: transfersByStudent.get(student.id) ?? [],
   }));
 
   const assessmentItems = assessmentRows
@@ -220,6 +313,9 @@ export default async function SchoolDetailsPage({
       discipline: item.discipline,
       assessment: item.assessment,
       grade: item.grade,
+      bimester: item.bimester,
+      weight: item.weight,
+      assessmentType: item.assessmentType,
       presence: item.presence,
       createdAt: item.createdAt.toISOString(),
     }));
@@ -235,6 +331,18 @@ export default async function SchoolDetailsPage({
     createdAt: request.createdAt.toISOString(),
     requesterName,
   }));
+
+  const occurrenceItems = occurrenceRows
+    .filter((item) => visibleStudentIds.includes(item.studentId))
+    .map((item) => ({
+      id: item.id,
+      studentId: item.studentId,
+      occurrenceDate: item.occurrenceDate,
+      type: item.type,
+      severity: item.severity,
+      description: item.description,
+      createdAt: item.createdAt.toISOString(),
+    }));
 
   const activeStudents = studentItems.filter(
     (student) => student.status === "ativo",
@@ -323,13 +431,13 @@ export default async function SchoolDetailsPage({
       {role === "professor" ? (
         <MyClassroomPanel
           schoolId={id}
-          teacherName={myTeacher?.name ?? session.user.name}
-          discipline={myTeacher?.discipline ?? ""}
-          classroomName={
-            classroomRows.find((item) => item.id === myTeacher?.classroomId)?.name ?? ""
-          }
+          teacherName={myTeacherContext?.name ?? session.user.name}
+          assignments={myTeacherContext?.assignments ?? []}
           students={studentItems}
           assessments={assessmentItems}
+          occurrences={occurrenceItems}
+          rules={rules}
+          capabilities={capabilities}
         />
       ) : role === "responsavel" ? (
         <GuardianPanel
@@ -337,10 +445,13 @@ export default async function SchoolDetailsPage({
           students={studentItems}
           requests={requestItems}
           assessments={assessmentItems}
+          rules={rules}
         />
       ) : (
         <SchoolManagement
           schoolId={id}
+          segment={school.segment}
+          rules={rules}
           capabilities={capabilities}
           profile={{
             directorName: school.directorName ?? "",
@@ -351,6 +462,11 @@ export default async function SchoolDetailsPage({
             shifts: school.shifts,
             classrooms: school.classrooms?.toString() ?? "",
             facilities: school.facilities,
+            passingGrade: school.passingGrade.toString(),
+            bimesters: school.bimesters.toString(),
+            minFrequency: school.minFrequency.toString(),
+            rotationModel: school.rotationModel,
+            enabledModules: school.enabledModules,
           }}
           initial={{
             classrooms: classroomRows,
@@ -481,22 +597,34 @@ export default async function SchoolDetailsPage({
                   Módulos deste segmento
                 </h2>
                 <p className="mt-1 text-sm text-slate-500">
-                  Habilitados para {segment.label.toLowerCase()}.
+                  Disponíveis para {segment.label.toLowerCase()}; o administrador
+                  escolhe quais ficam ativos.
                 </p>
               </div>
               <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                {modules.length} módulos
+                {modules.filter((module) => enabledModuleIds.has(module.id)).length}/
+                {modules.length} ativos
               </span>
             </div>
 
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              {modules.map((module) => (
+              {modules.map((module) => {
+                const enabled = enabledModuleIds.has(module.id);
+                return (
                 <div
                   key={module.id}
-                  className="flex items-start gap-3 rounded-xl border border-slate-200 p-4"
+                  className={`flex items-start gap-3 rounded-xl border p-4 ${
+                    enabled ? "border-slate-200" : "border-slate-100 bg-slate-50/60"
+                  }`}
                 >
-                  <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
-                    <Check className="size-3" />
+                  <span
+                    className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full ${
+                      enabled
+                        ? "bg-emerald-100 text-emerald-700"
+                        : "bg-slate-200 text-slate-500"
+                    }`}
+                  >
+                    {enabled ? <Check className="size-3" /> : <Lock className="size-3" />}
                   </span>
                   <div>
                     <p className="text-sm font-semibold text-slate-800">
@@ -507,7 +635,8 @@ export default async function SchoolDetailsPage({
                     </p>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </section>
         </>

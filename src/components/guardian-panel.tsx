@@ -6,6 +6,7 @@ import { useState, type FormEvent } from "react";
 
 import type {
   AssessmentItem,
+  SchoolRules,
   StudentItem,
   UpdateRequestItem,
 } from "./school-types";
@@ -62,16 +63,72 @@ const STATUS_LABELS: Record<string, string> = {
   rejeitado: "Rejeitado",
 };
 
+const ASSESSMENT_TYPE_LABELS: Record<AssessmentItem["assessmentType"], string> = {
+  avaliacao: "Avaliação",
+  recuperacao: "Recuperação",
+  trabalho: "Trabalho",
+  prova: "Prova",
+};
+
+const numberFormatter = new Intl.NumberFormat("pt-BR", {
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+});
+
+function formatReference(value: number) {
+  return Number.isFinite(value) ? numberFormatter.format(value) : "0,0";
+}
+
+function weightedAverage(items: AssessmentItem[]) {
+  let totalWeight = 0;
+  let weightedSum = 0;
+  for (const item of items) {
+    if (item.assessmentType === "recuperacao") continue;
+    const weight = Number.isFinite(item.weight) ? item.weight : 0;
+    totalWeight += weight;
+    weightedSum += item.grade * weight;
+  }
+  return totalWeight > 0 ? weightedSum / totalWeight : 0;
+}
+
+function presenceRate(items: AssessmentItem[]) {
+  if (items.length === 0) return 0;
+  const presentes = items.filter((item) => item.presence === "presente").length;
+  return (presentes / items.length) * 100;
+}
+
+function groupByBimester(items: AssessmentItem[], configuredBimesters: number) {
+  const groups = new Map<number, AssessmentItem[]>();
+  for (const item of items) {
+    const bimester = item.bimester;
+    const current = groups.get(bimester);
+    if (current) current.push(item);
+    else groups.set(bimester, [item]);
+  }
+
+  const maxBimester = Math.max(
+    Number.isFinite(configuredBimesters) ? configuredBimesters : 0,
+    ...Array.from(groups.keys(), (bimester) => (Number.isFinite(bimester) ? bimester : 0)),
+  );
+
+  return Array.from(groups.keys())
+    .filter((bimester) => bimester >= 1 && bimester <= maxBimester)
+    .sort((a, b) => a - b)
+    .map((bimester) => ({ bimester, items: groups.get(bimester)! }));
+}
+
 export function GuardianPanel({
   schoolId,
   students,
   requests,
   assessments,
+  rules,
 }: {
   schoolId: string;
   students: StudentItem[];
   requests: UpdateRequestItem[];
   assessments: AssessmentItem[];
+  rules: SchoolRules;
 }) {
   const router = useRouter();
   const [form, setForm] = useState<FormState>({
@@ -175,57 +232,113 @@ export function GuardianPanel({
               Nenhum aluno vinculado ao seu usuário. Solicite à secretaria o vínculo.
             </p>
           ) : (
-            students.map((student) => (
-              <div key={student.id} className="rounded-xl border border-slate-200 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-800">{student.name}</p>
-                    <p className="text-xs text-slate-500">
-                      {student.enrollmentNumber ?? "Sem número"} · {student.grade ?? "Sem série"} ·{" "}
-                      {student.classroomName ?? "Sem turma"}
-                    </p>
+            students.map((student) => {
+              const studentAssessments = assessments.filter(
+                (item) => item.studentId === student.id,
+              );
+              const bimesterGroups = groupByBimester(studentAssessments, rules.bimesters);
+
+              return (
+                <div key={student.id} className="rounded-xl border border-slate-200 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">{student.name}</p>
+                      <p className="text-xs text-slate-500">
+                        {student.enrollmentNumber ?? "Sem número"} · {student.grade ?? "Sem série"} ·{" "}
+                        {student.classroomName ?? "Sem turma"}
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                      {STATUS_LABELS[student.status] ?? student.status}
+                    </span>
                   </div>
-                  <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-                    {STATUS_LABELS[student.status] ?? student.status}
-                  </span>
-                </div>
-                <p className="mt-3 flex items-center gap-2 text-xs font-semibold text-slate-600">
-                  <BookOpen className="size-3.5" /> Boletim
-                </p>
-                {assessments.filter((item) => item.studentId === student.id).length === 0 ? (
-                  <p className="mt-1 text-xs text-slate-500">
-                    Nenhuma nota ou frequência lançada até o momento.
+                  <p className="mt-3 flex items-center gap-2 text-xs font-semibold text-slate-600">
+                    <BookOpen className="size-3.5" /> Boletim
                   </p>
-                ) : (
-                  <div className="mt-2 overflow-hidden rounded-lg border border-slate-100">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-slate-50 text-slate-500">
-                        <tr>
-                          <th className="px-3 py-2 font-semibold">Avaliação</th>
-                          <th className="px-3 py-2 font-semibold">Disciplina</th>
-                          <th className="px-3 py-2 font-semibold">Nota</th>
-                          <th className="px-3 py-2 font-semibold">Frequência</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 text-slate-700">
-                        {assessments
-                          .filter((item) => item.studentId === student.id)
-                          .map((item) => (
-                            <tr key={item.id}>
-                              <td className="px-3 py-2">{item.assessment}</td>
-                              <td className="px-3 py-2">{item.discipline}</td>
-                              <td className="px-3 py-2 font-semibold">{item.grade.toFixed(1)}</td>
-                              <td className="px-3 py-2">
-                                {item.presence === "presente" ? "Presente" : "Falta"}
-                              </td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            ))
+                  {bimesterGroups.length === 0 ? (
+                    <p className="mt-1 text-xs text-slate-500">
+                      Nenhuma nota ou frequência lançada até o momento.
+                    </p>
+                  ) : (
+                    <div className="mt-2 space-y-3">
+                      {bimesterGroups.map(({ bimester, items: bimesterItems }) => {
+                        const average = weightedAverage(bimesterItems);
+                        const frequency = presenceRate(bimesterItems);
+                        const passed = average >= rules.passingGrade;
+                        const frequencyOk = frequency >= rules.minFrequency;
+
+                        return (
+                          <div key={bimester} className="rounded-xl border border-slate-200 p-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-xs font-semibold text-slate-700">
+                                {bimester}º bimestre
+                              </p>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-xs text-slate-500">
+                                  Média: {average.toFixed(1)} · Meta: {formatReference(rules.passingGrade)}
+                                </span>
+                                <span
+                                  className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                    passed
+                                      ? "bg-emerald-50 text-emerald-700"
+                                      : "bg-amber-50 text-amber-700"
+                                  }`}
+                                >
+                                  {passed ? "Aprovado" : "Abaixo da meta"}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                              <span className="text-xs text-slate-500">
+                                Frequência: {frequency.toFixed(1)}% · Mínimo:{" "}
+                                {formatReference(rules.minFrequency)}%
+                              </span>
+                              <span
+                                className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                  frequencyOk
+                                    ? "bg-emerald-50 text-emerald-700"
+                                    : "bg-amber-50 text-amber-700"
+                                }`}
+                              >
+                                {frequencyOk ? "Frequência OK" : "Frequência abaixo do mínimo"}
+                              </span>
+                            </div>
+                            <div className="mt-2 overflow-hidden rounded-lg border border-slate-100">
+                              <table className="w-full text-left text-xs">
+                                <thead className="bg-slate-50 text-slate-500">
+                                  <tr>
+                                    <th className="px-3 py-2 font-semibold">Avaliação</th>
+                                    <th className="px-3 py-2 font-semibold">Disciplina</th>
+                                    <th className="px-3 py-2 font-semibold">Tipo</th>
+                                    <th className="px-3 py-2 font-semibold">Nota</th>
+                                    <th className="px-3 py-2 font-semibold">Frequência</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 text-slate-700">
+                                  {bimesterItems.map((item) => (
+                                    <tr key={item.id}>
+                                      <td className="px-3 py-2">{item.assessment}</td>
+                                      <td className="px-3 py-2">{item.discipline}</td>
+                                      <td className="px-3 py-2">
+                                        {ASSESSMENT_TYPE_LABELS[item.assessmentType] ?? item.assessmentType}
+                                      </td>
+                                      <td className="px-3 py-2 font-semibold">{item.grade.toFixed(1)}</td>
+                                      <td className="px-3 py-2">
+                                        {item.presence === "presente" ? "Presente" : "Falta"}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
       </section>

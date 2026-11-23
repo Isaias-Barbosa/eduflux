@@ -10,7 +10,7 @@ import {
 
 import { user } from "./auth-schema";
 import type { FacilityOption, ShiftOption } from "@/lib/schools/options";
-import type { SchoolSegment } from "@/lib/schools/segments";
+import type { SchoolModuleId, SchoolSegment } from "@/lib/schools/segments";
 
 /**
  * Uma escola=cada contrato da plataforma. O `segment` define quais módulos
@@ -51,6 +51,20 @@ export const schools = sqliteTable(
     classrooms: integer("classrooms"),
     facilities: text("facilities", { mode: "json" })
       .$type<FacilityOption[]>()
+      .notNull()
+      .default([]),
+    /**
+     * Regras pedagógicas configuráveis pelo administrador da escola.
+     * `enabledModules` vazio significa "todos os módulos do segmento".
+     */
+    passingGrade: real("passing_grade").notNull().default(6),
+    bimesters: integer("bimesters").notNull().default(4),
+    minFrequency: real("min_frequency").notNull().default(75),
+    rotationModel: text("rotation_model", { enum: ["alunos", "professor"] })
+      .notNull()
+      .default("alunos"),
+    enabledModules: text("enabled_modules", { mode: "json" })
+      .$type<SchoolModuleId[]>()
       .notNull()
       .default([]),
     status: text("status", { enum: ["ativa", "inativa"] })
@@ -149,6 +163,137 @@ export const teachers = sqliteTable(
     uniqueIndex("teachers_school_email_idx").on(table.schoolId, table.email),
     index("teachers_school_id_idx").on(table.schoolId),
     index("teachers_classroom_id_idx").on(table.classroomId),
+  ],
+);
+
+/**
+ * Vínculo de um professor com uma sala e uma disciplina. Um professor pode
+ * lecionar em várias salas e um aluno pode ter vários professores.
+ */
+export const teacherAssignments = sqliteTable(
+  "teacher_assignments",
+  {
+    id: text("id").primaryKey(),
+    schoolId: text("school_id")
+      .notNull()
+      .references(() => schools.id, { onDelete: "cascade" }),
+    teacherId: text("teacher_id")
+      .notNull()
+      .references(() => teachers.id, { onDelete: "cascade" }),
+    classroomId: text("classroom_id")
+      .notNull()
+      .references(() => classrooms.id, { onDelete: "cascade" }),
+    discipline: text("discipline").notNull().default(""),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    uniqueIndex("teacher_assignments_unique_idx").on(
+      table.teacherId,
+      table.classroomId,
+      table.discipline,
+    ),
+    index("teacher_assignments_school_id_idx").on(table.schoolId),
+    index("teacher_assignments_teacher_id_idx").on(table.teacherId),
+    index("teacher_assignments_classroom_id_idx").on(table.classroomId),
+  ],
+);
+
+/** Alunos atendidos em cada vínculo professor/sala/disciplina. */
+export const teacherStudents = sqliteTable(
+  "teacher_students",
+  {
+    id: text("id").primaryKey(),
+    schoolId: text("school_id")
+      .notNull()
+      .references(() => schools.id, { onDelete: "cascade" }),
+    assignmentId: text("assignment_id")
+      .notNull()
+      .references(() => teacherAssignments.id, { onDelete: "cascade" }),
+    studentId: text("student_id")
+      .notNull()
+      .references(() => students.id, { onDelete: "cascade" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    uniqueIndex("teacher_students_unique_idx").on(
+      table.assignmentId,
+      table.studentId,
+    ),
+    index("teacher_students_school_id_idx").on(table.schoolId),
+    index("teacher_students_student_id_idx").on(table.studentId),
+  ],
+);
+
+/** Ocorrências pedagógicas e disciplinares registradas pelos professores. */
+export const studentOccurrences = sqliteTable(
+  "student_occurrences",
+  {
+    id: text("id").primaryKey(),
+    schoolId: text("school_id")
+      .notNull()
+      .references(() => schools.id, { onDelete: "cascade" }),
+    studentId: text("student_id")
+      .notNull()
+      .references(() => students.id, { onDelete: "cascade" }),
+    assignmentId: text("assignment_id").references(() => teacherAssignments.id, {
+      onDelete: "set null",
+    }),
+    occurrenceDate: text("occurrence_date").notNull(),
+    type: text("type", {
+      enum: ["pedagogica", "disciplinar", "frequencia", "saude", "outro"],
+    })
+      .notNull()
+      .default("pedagogica"),
+    severity: text("severity", { enum: ["baixa", "media", "alta"] })
+      .notNull()
+      .default("baixa"),
+    description: text("description").notNull(),
+    recordedBy: text("recorded_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    index("student_occurrences_school_id_idx").on(table.schoolId),
+    index("student_occurrences_student_id_idx").on(table.studentId),
+  ],
+);
+
+/** Saídas do aluno e o histórico escolar emitido pela secretaria. */
+export const studentTransferRecords = sqliteTable(
+  "student_transfer_records",
+  {
+    id: text("id").primaryKey(),
+    schoolId: text("school_id")
+      .notNull()
+      .references(() => schools.id, { onDelete: "cascade" }),
+    studentId: text("student_id")
+      .notNull()
+      .references(() => students.id, { onDelete: "cascade" }),
+    destinationSchool: text("destination_school").notNull().default(""),
+    transferDate: text("transfer_date").notNull(),
+    reason: text("reason"),
+    note: text("note"),
+    historySnapshot: text("history_snapshot", { mode: "json" }).$type<
+      Record<string, unknown> | null
+    >(),
+    historyIssuedAt: integer("history_issued_at", { mode: "timestamp_ms" }),
+    createdBy: text("created_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    index("student_transfer_records_school_id_idx").on(table.schoolId),
+    index("student_transfer_records_student_id_idx").on(table.studentId),
   ],
 );
 
@@ -315,6 +460,13 @@ export const studentAssessments = sqliteTable(
     discipline: text("discipline").notNull(),
     assessment: text("assessment").notNull(),
     grade: real("grade").notNull(),
+    bimester: integer("bimester").notNull().default(1),
+    weight: real("weight").notNull().default(1),
+    assessmentType: text("assessment_type", {
+      enum: ["avaliacao", "recuperacao", "trabalho", "prova"],
+    })
+      .notNull()
+      .default("avaliacao"),
     presence: text("presence", { enum: ["presente", "falta"] })
       .notNull()
       .default("presente"),
@@ -331,6 +483,7 @@ export const studentAssessments = sqliteTable(
   (table) => [
     index("student_assessments_school_id_idx").on(table.schoolId),
     index("student_assessments_student_id_idx").on(table.studentId),
+    index("student_assessments_bimester_idx").on(table.schoolId, table.bimester),
   ],
 );
 
@@ -339,3 +492,7 @@ export type NewSchool = typeof schools.$inferInsert;
 export type SchoolMember = typeof schoolMembers.$inferSelect;
 export type Student = typeof students.$inferSelect;
 export type StudentUpdateRequest = typeof studentUpdateRequests.$inferSelect;
+export type TeacherAssignment = typeof teacherAssignments.$inferSelect;
+export type TeacherStudent = typeof teacherStudents.$inferSelect;
+export type StudentOccurrence = typeof studentOccurrences.$inferSelect;
+export type StudentTransferRecord = typeof studentTransferRecords.$inferSelect;

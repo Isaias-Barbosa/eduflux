@@ -1,17 +1,84 @@
 import { randomBytes } from "node:crypto";
 
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 
 import { db } from "@/lib/db/client";
-import { classrooms, schoolMembers, teachers } from "@/lib/db/schema";
+import {
+  classrooms,
+  schoolMembers,
+  students,
+  teacherAssignments,
+  teacherStudents,
+  teachers,
+} from "@/lib/db/schema";
 import { authorizeSchoolRequest, invalidPayload } from "@/lib/schools/api-access";
 import { createTeacherSchema } from "@/lib/schools/management-validation";
 import { createManagedUser, findUserByEmail } from "@/lib/schools/managed-users";
+import {
+  validateAssignments,
+  type AssignmentInput,
+} from "@/lib/schools/teacher-assignments";
 
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+type Context = { params: Promise<{ id: string }> };
+
+export async function GET(_request: Request, { params }: Context) {
+  const { id } = await params;
+  const access = await authorizeSchoolRequest(id, "teacher:read");
+  if (access.error) return access.error;
+
+  const rows = await db
+    .select()
+    .from(teachers)
+    .where(eq(teachers.schoolId, id))
+    .orderBy(asc(teachers.name));
+
+  const teacherIds = rows.map((row) => row.id);
+  const assignments =
+    teacherIds.length > 0
+      ? await db
+          .select({
+            id: teacherAssignments.id,
+            teacherId: teacherAssignments.teacherId,
+            classroomId: teacherAssignments.classroomId,
+            classroomName: classrooms.name,
+            discipline: teacherAssignments.discipline,
+          })
+          .from(teacherAssignments)
+          .innerJoin(classrooms, eq(teacherAssignments.classroomId, classrooms.id))
+          .where(inArray(teacherAssignments.teacherId, teacherIds))
+          .orderBy(asc(classrooms.name), asc(teacherAssignments.discipline))
+      : [];
+
+  const assignmentIds = assignments.map((row) => row.id);
+  const links =
+    assignmentIds.length > 0
+      ? await db
+          .select({
+            assignmentId: teacherStudents.assignmentId,
+            studentId: teacherStudents.studentId,
+            studentName: students.name,
+          })
+          .from(teacherStudents)
+          .innerJoin(students, eq(teacherStudents.studentId, students.id))
+          .where(inArray(teacherStudents.assignmentId, assignmentIds))
+      : [];
+
+  return Response.json({
+    teachers: rows.map((teacher) => ({
+      ...teacher,
+      assignments: assignments
+        .filter((assignment) => assignment.teacherId === teacher.id)
+        .map((assignment) => ({
+          ...assignment,
+          students: links
+            .filter((link) => link.assignmentId === assignment.id)
+            .map((link) => ({ id: link.studentId, name: link.studentName })),
+        })),
+    })),
+  });
+}
+
+export async function POST(request: Request, { params }: Context) {
   const { id } = await params;
   const access = await authorizeSchoolRequest(id, "teacher:create");
   if (access.error) return access.error;
@@ -28,20 +95,32 @@ export async function POST(
   const data = parsed.data;
   const email = data.email.toLowerCase();
 
-  if (data.classroomId) {
-    const classroom = await db
-      .select({ id: classrooms.id })
-      .from(classrooms)
-      .where(and(eq(classrooms.id, data.classroomId), eq(classrooms.schoolId, id)))
-      .limit(1);
+  let assignmentInputs: AssignmentInput[] = data.assignments;
+  if (assignmentInputs.length === 0 && data.classroomId) {
+    const legacyStudents = await db
+      .select({ id: students.id })
+      .from(students)
+      .where(
+        and(eq(students.schoolId, id), eq(students.classroomId, data.classroomId)),
+      );
 
-    if (classroom.length === 0) {
-      return invalidPayload("Sala de aula inválida para esta escola.");
-    }
+    assignmentInputs = [
+      {
+        classroomId: data.classroomId,
+        discipline: data.discipline,
+        studentIds: legacyStudents.map((row) => row.id),
+      },
+    ];
   }
 
-  const existing = await findUserByEmail(email);
+  if (assignmentInputs.length === 0) {
+    return invalidPayload("Informe ao menos uma sala para o professor.");
+  }
 
+  const validated = await validateAssignments(id, assignmentInputs);
+  if (!validated.ok) return invalidPayload(validated.error);
+
+  const existing = await findUserByEmail(email);
   if (existing) {
     return Response.json(
       { error: "Já existe um usuário com este e-mail." },
@@ -63,6 +142,8 @@ export async function POST(
   }
 
   const teacherId = crypto.randomUUID();
+  const uniqueAssignments = deduplicateAssignments(validated.assignments);
+  const primary = uniqueAssignments[0];
 
   await db.transaction(async (tx) => {
     await tx.insert(teachers).values({
@@ -71,8 +152,8 @@ export async function POST(
       userId: teacherUserId,
       name: data.name,
       email,
-      discipline: data.discipline || "",
-      classroomId: data.classroomId || null,
+      discipline: primary.discipline,
+      classroomId: primary.classroomId,
     });
 
     await tx.insert(schoolMembers).values({
@@ -81,10 +162,43 @@ export async function POST(
       userId: teacherUserId,
       role: "professor",
     });
+
+    for (const assignment of uniqueAssignments) {
+      const assignmentId = crypto.randomUUID();
+      await tx.insert(teacherAssignments).values({
+        id: assignmentId,
+        schoolId: id,
+        teacherId,
+        classroomId: assignment.classroomId,
+        discipline: assignment.discipline,
+      });
+
+      for (const studentId of assignment.studentIds) {
+        await tx.insert(teacherStudents).values({
+          id: crypto.randomUUID(),
+          schoolId: id,
+          assignmentId,
+          studentId,
+        });
+      }
+    }
   });
 
   return Response.json(
     { id: teacherId, temporaryPassword },
     { status: 201 },
   );
+}
+
+function deduplicateAssignments(items: AssignmentInput[]) {
+  const seen = new Map<string, AssignmentInput>();
+  for (const item of items) {
+    const key = `${item.classroomId}|${item.discipline}`;
+    const existing = seen.get(key);
+    seen.set(key, {
+      ...item,
+      studentIds: [...new Set([...(existing?.studentIds ?? []), ...item.studentIds])],
+    });
+  }
+  return [...seen.values()];
 }
