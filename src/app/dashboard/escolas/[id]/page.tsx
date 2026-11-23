@@ -4,6 +4,7 @@ import {
   BadgeCheck,
   Building2,
   Check,
+  ClipboardList,
   Mail,
   MapPin,
   Phone,
@@ -105,10 +106,28 @@ export default async function SchoolDetailsPage({
                 {school.email}
               </div>
             )}
+            {school.legalName && (
+              <div>
+                <dt className="text-xs text-slate-500">Razão Social</dt>
+                <dd className="mt-0.5 text-slate-700">{school.legalName}</dd>
+              </div>
+            )}
             {school.cnpj && (
               <div>
                 <dt className="text-xs text-slate-500">CNPJ</dt>
                 <dd className="mt-0.5 text-slate-700">{school.cnpj}</dd>
+              </div>
+            )}
+            {school.inepCode && (
+              <div>
+                <dt className="text-xs text-slate-500">Código INEP</dt>
+                <dd className="mt-0.5 text-slate-700">{school.inepCode}</dd>
+              </div>
+            )}
+            {school.foundedYear && (
+              <div>
+                <dt className="text-xs text-slate-500">Ano de fundação</dt>
+                <dd className="mt-0.5 text-slate-700">{school.foundedYear}</dd>
               </div>
             )}
           </dl>
@@ -117,27 +136,77 @@ export default async function SchoolDetailsPage({
         <section className="rounded-2xl border border-slate-200 bg-white p-6">
           <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
             <UserRound className="size-4 text-emerald-600" />
-            Direção
+            Diretoria e Equipe Pedagógica
           </h2>
-          <p className="mt-4 text-base font-semibold text-slate-800">
-            {school.directorName}
-          </p>
-          <div className="mt-3 space-y-2 text-sm text-slate-600">
+          <dl className="mt-4 space-y-3 text-sm">
+            <div>
+              <dt className="text-xs text-slate-500">Diretora Geral</dt>
+              <dd className="mt-0.5 font-medium text-slate-800">
+                {school.directorName}
+              </dd>
+            </div>
+            {school.pedagogicalCoordinator && (
+              <div>
+                <dt className="text-xs text-slate-500">
+                  Coordenador Pedagógico
+                </dt>
+                <dd className="mt-0.5 font-medium text-slate-800">
+                  {school.pedagogicalCoordinator}
+                </dd>
+              </div>
+            )}
+            {school.secretaryName && (
+              <div>
+                <dt className="text-xs text-slate-500">Secretaria Escolar</dt>
+                <dd className="mt-0.5 font-medium text-slate-800">
+                  {school.secretaryName}
+                </dd>
+              </div>
+            )}
             {school.directorEmail && (
-              <p className="flex items-center gap-2">
+              <div className="flex items-center gap-2 text-slate-600">
                 <Mail className="size-4 text-slate-400" />
                 {school.directorEmail}
-              </p>
+              </div>
             )}
             {school.directorPhone && (
-              <p className="flex items-center gap-2">
+              <div className="flex items-center gap-2 text-slate-600">
                 <Phone className="size-4 text-slate-400" />
                 {school.directorPhone}
-              </p>
+              </div>
             )}
-          </div>
+          </dl>
         </section>
       </div>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-6">
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+          <ClipboardList className="size-4 text-emerald-600" />
+          Infraestrutura e Números
+        </h2>
+        <dl className="mt-4 grid gap-4 text-sm sm:grid-cols-3">
+          <div>
+            <dt className="text-xs text-slate-500">
+              Turnos de funcionamento
+            </dt>
+            <dd className="mt-0.5 font-medium text-slate-800">
+              {school.shifts.length ? school.shifts.join(", ") : "—"}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-slate-500">Salas de aula</dt>
+            <dd className="mt-0.5 font-medium text-slate-800">
+              {school.classrooms ?? "—"}
+            </dd>
+          </div>
+          <div className="sm:col-span-3">
+            <dt className="text-xs text-slate-500">Dependências</dt>
+            <dd className="mt-0.5 font-medium text-slate-800">
+              {school.facilities.length ? school.facilities.join(", ") : "—"}
+            </dd>
+          </div>
+        </dl>
+      </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-6">
         <div className="flex items-center justify-between">

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { FACILITY_OPTIONS, SHIFT_OPTIONS } from "./options";
+
 const requiredText = (label: string, max = 120) =>
   z
     .string()
@@ -19,10 +21,27 @@ export const createSchoolSchema = z.object({
     error: "Selecione o tipo de ensino",
   }),
   name: requiredText("Nome da escola"),
+  legalName: optionalText(160),
   cnpj: z
     .string()
     .trim()
     .regex(/^(\d{14})?$/, "CNPJ deve conter 14 dígitos")
+    .default(""),
+  inepCode: z
+    .string()
+    .trim()
+    .regex(/^(\d{8})?$/, "Código INEP deve conter 8 dígitos")
+    .default(""),
+  foundedYear: z
+    .string()
+    .trim()
+    .regex(/^(\d{4})?$/, "Ano de fundação deve ter 4 dígitos")
+    .refine(
+      (value) =>
+        !value ||
+        (Number(value) >= 1800 && Number(value) <= new Date().getFullYear()),
+      "Ano de fundação inválido",
+    )
     .default(""),
   phone: z.string().trim().max(20, "Telefone muito longo").default(""),
   email: optionalEmail,
@@ -40,9 +59,18 @@ export const createSchoolSchema = z.object({
     .trim()
     .length(2, "Informe a sigla do estado (UF)")
     .transform((value) => value.toUpperCase()),
-  directorName: requiredText("Nome da direção"),
+  directorName: requiredText("Diretora Geral"),
   directorEmail: optionalEmail,
   directorPhone: z.string().trim().max(20, "Telefone muito longo").default(""),
+  pedagogicalCoordinator: optionalText(120),
+  secretaryName: optionalText(120),
+  shifts: z.array(z.enum([...SHIFT_OPTIONS])).default([]),
+  classrooms: z
+    .string()
+    .trim()
+    .regex(/^(\d{1,4})?$/, "Número de salas inválido")
+    .default(""),
+  facilities: z.array(z.enum([...FACILITY_OPTIONS])).default([]),
 });
 
 export type CreateSchoolInput = z.infer<typeof createSchoolSchema>;

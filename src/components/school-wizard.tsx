@@ -16,6 +16,12 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import {
+  FACILITY_OPTIONS,
+  SHIFT_OPTIONS,
+  type FacilityOption,
+  type ShiftOption,
+} from "@/lib/schools/options";
+import {
   SEGMENTS,
   SEGMENT_IDS,
   getModules,
@@ -31,7 +37,10 @@ const segmentIcons: Record<SchoolSegment, LucideIcon> = {
 type FormFields = {
   segment: SchoolSegment | "";
   name: string;
+  legalName: string;
   cnpj: string;
+  inepCode: string;
+  foundedYear: string;
   phone: string;
   email: string;
   zipCode: string;
@@ -44,12 +53,20 @@ type FormFields = {
   directorName: string;
   directorEmail: string;
   directorPhone: string;
+  pedagogicalCoordinator: string;
+  secretaryName: string;
+  shifts: ShiftOption[];
+  classrooms: string;
+  facilities: FacilityOption[];
 };
 
 const initialFields: FormFields = {
   segment: "",
   name: "",
+  legalName: "",
   cnpj: "",
+  inepCode: "",
+  foundedYear: "",
   phone: "",
   email: "",
   zipCode: "",
@@ -62,9 +79,18 @@ const initialFields: FormFields = {
   directorName: "",
   directorEmail: "",
   directorPhone: "",
+  pedagogicalCoordinator: "",
+  secretaryName: "",
+  shifts: [],
+  classrooms: "",
+  facilities: [],
 };
 
-const steps = ["Tipo de ensino", "Dados da escola", "Direção e revisão"];
+const steps = [
+  "Tipo de ensino",
+  "Dados da escola",
+  "Equipe e infraestrutura",
+];
 
 function Field({
   label,
@@ -109,6 +135,55 @@ function Field({
   );
 }
 
+function CheckGroup<T extends string>({
+  legend,
+  options,
+  value,
+  onChange,
+}: {
+  legend: string;
+  options: readonly T[];
+  value: T[];
+  onChange: (value: T[]) => void;
+}) {
+  function toggle(option: T) {
+    onChange(
+      value.includes(option)
+        ? value.filter((item) => item !== option)
+        : [...value, option],
+    );
+  }
+
+  return (
+    <fieldset>
+      <legend className="text-sm font-medium text-slate-700">{legend}</legend>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {options.map((option) => {
+          const selected = value.includes(option);
+          return (
+            <label
+              key={option}
+              className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition ${
+                selected
+                  ? "border-emerald-500 bg-emerald-50 text-emerald-800"
+                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={selected}
+                onChange={() => toggle(option)}
+                className="size-4 accent-emerald-600"
+              />
+              {option}
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
+
 export function SchoolWizard() {
   const router = useRouter();
   const [step, setStep] = useState(0);
@@ -141,9 +216,27 @@ export function SchoolWizard() {
       if (fields.state.trim().length !== 2) {
         return "Informe a sigla do estado com 2 letras.";
       }
+      if (fields.inepCode && !/^\d{8}$/.test(fields.inepCode)) {
+        return "O código INEP deve conter 8 dígitos.";
+      }
+      if (fields.foundedYear) {
+        const year = Number(fields.foundedYear);
+        if (
+          !/^\d{4}$/.test(fields.foundedYear) ||
+          year < 1800 ||
+          year > new Date().getFullYear()
+        ) {
+          return "Informe um ano de fundação válido.";
+        }
+      }
     }
-    if (step === 2 && !fields.directorName.trim()) {
-      return "Informe o nome da pessoa responsável pela direção.";
+    if (step === 2) {
+      if (!fields.directorName.trim()) {
+        return "Informe o nome da Diretora Geral.";
+      }
+      if (fields.classrooms && !/^\d{1,4}$/.test(fields.classrooms)) {
+        return "Informe um número válido de salas de aula.";
+      }
     }
     return "";
   }
@@ -305,15 +398,51 @@ export function SchoolWizard() {
                 placeholder="Escola Municipal Estrela do Sul"
                 required
               />
-              <div className="grid gap-4 sm:grid-cols-2">
+              <Field
+                label="Razão Social"
+                value={fields.legalName}
+                onChange={(value) => update("legalName", value)}
+                placeholder="Mantenedora da Escola Estrela do Sul Ltda."
+                hint="Opcional"
+              />
+              <div className="grid gap-4 sm:grid-cols-3">
                 <Field
                   label="CNPJ"
                   value={fields.cnpj}
                   onChange={(value) => update("cnpj", value)}
                   placeholder="Somente números"
-                  hint="Opcional nesta etapa"
+                  hint="Opcional"
                   inputMode="numeric"
                   maxLength={14}
+                />
+                <Field
+                  label="Código INEP"
+                  value={fields.inepCode}
+                  onChange={(value) => update("inepCode", value)}
+                  placeholder="8 dígitos"
+                  hint="Opcional"
+                  inputMode="numeric"
+                  maxLength={8}
+                />
+                <Field
+                  label="Ano de fundação"
+                  value={fields.foundedYear}
+                  onChange={(value) => update("foundedYear", value)}
+                  placeholder="2020"
+                  hint="Opcional"
+                  type="number"
+                  inputMode="numeric"
+                  maxLength={4}
+                />
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field
+                  label="E-mail institucional"
+                  value={fields.email}
+                  onChange={(value) => update("email", value)}
+                  placeholder="contato@escola.com.br"
+                  type="email"
+                  inputMode="email"
                 />
                 <Field
                   label="Telefone da escola"
@@ -323,14 +452,6 @@ export function SchoolWizard() {
                   inputMode="tel"
                 />
               </div>
-              <Field
-                label="E-mail institucional"
-                value={fields.email}
-                onChange={(value) => update("email", value)}
-                placeholder="contato@escola.com.br"
-                type="email"
-                inputMode="email"
-              />
 
               <div className="border-t border-slate-100 pt-5">
                 <p className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-800">
@@ -405,37 +526,86 @@ export function SchoolWizard() {
         {step === 2 && (
           <div>
             <h2 className="text-xl font-semibold text-slate-900">
-              Direção e revisão
+              Equipe e infraestrutura
             </h2>
             <p className="mt-2 text-sm text-slate-500">
-              Confira os dados antes de concluir a configuração.
+              Informe a equipe pedagógica, os turnos e a estrutura da escola.
             </p>
 
-            <div className="mt-6 space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
+            <div className="mt-6 space-y-6">
+              <section className="space-y-4">
+                <p className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                  <UserRound className="size-4 text-emerald-600" />
+                  Diretoria e Equipe Pedagógica
+                </p>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field
+                    label="Diretora Geral"
+                    value={fields.directorName}
+                    onChange={(value) => update("directorName", value)}
+                    placeholder="Maria da Silva"
+                    required
+                  />
+                  <Field
+                    label="Coordenador Pedagógico"
+                    value={fields.pedagogicalCoordinator}
+                    onChange={(value) => update("pedagogicalCoordinator", value)}
+                    placeholder="Ana Souza"
+                  />
+                  <Field
+                    label="Secretaria Escolar"
+                    value={fields.secretaryName}
+                    onChange={(value) => update("secretaryName", value)}
+                    placeholder="Carla Lima"
+                  />
+                  <Field
+                    label="E-mail da direção"
+                    value={fields.directorEmail}
+                    onChange={(value) => update("directorEmail", value)}
+                    placeholder="direcao@escola.com.br"
+                    type="email"
+                    inputMode="email"
+                  />
+                </div>
                 <Field
-                  label="Nome da diretora / diretor"
-                  value={fields.directorName}
-                  onChange={(value) => update("directorName", value)}
-                  placeholder="Maria da Silva"
-                  required
+                  label="Telefone da direção"
+                  value={fields.directorPhone}
+                  onChange={(value) => update("directorPhone", value)}
+                  placeholder="(11) 90000-0000"
+                  inputMode="tel"
                 />
-                <Field
-                  label="E-mail da direção"
-                  value={fields.directorEmail}
-                  onChange={(value) => update("directorEmail", value)}
-                  placeholder="direcao@escola.com.br"
-                  type="email"
-                  inputMode="email"
+              </section>
+
+              <section className="space-y-4 border-t border-slate-100 pt-6">
+                <p className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                  <Building2 className="size-4 text-emerald-600" />
+                  Infraestrutura e Números
+                </p>
+                <CheckGroup
+                  legend="Turnos de Funcionamento"
+                  options={SHIFT_OPTIONS}
+                  value={fields.shifts}
+                  onChange={(value) => update("shifts", value)}
                 />
-              </div>
-              <Field
-                label="Telefone da direção"
-                value={fields.directorPhone}
-                onChange={(value) => update("directorPhone", value)}
-                placeholder="(11) 90000-0000"
-                inputMode="tel"
-              />
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field
+                    label="Salas de aula"
+                    value={fields.classrooms}
+                    onChange={(value) => update("classrooms", value)}
+                    placeholder="12"
+                    hint="Opcional"
+                    type="number"
+                    inputMode="numeric"
+                    maxLength={4}
+                  />
+                </div>
+                <CheckGroup
+                  legend="Dependências"
+                  options={FACILITY_OPTIONS}
+                  value={fields.facilities}
+                  onChange={(value) => update("facilities", value)}
+                />
+              </section>
 
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
                 <p className="flex items-center gap-2 text-sm font-semibold text-slate-900">
@@ -455,6 +625,24 @@ export function SchoolWizard() {
                       {fields.name}
                     </dd>
                   </div>
+                  <div>
+                    <dt className="text-xs text-slate-500">Razão Social</dt>
+                    <dd className="mt-0.5 font-medium text-slate-800">
+                      {fields.legalName || "—"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-slate-500">Código INEP</dt>
+                    <dd className="mt-0.5 font-medium text-slate-800">
+                      {fields.inepCode || "—"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-slate-500">Ano de fundação</dt>
+                    <dd className="mt-0.5 font-medium text-slate-800">
+                      {fields.foundedYear || "—"}
+                    </dd>
+                  </div>
                   <div className="sm:col-span-2">
                     <dt className="text-xs text-slate-500">Endereço</dt>
                     <dd className="mt-0.5 font-medium text-slate-800">
@@ -464,9 +652,38 @@ export function SchoolWizard() {
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-xs text-slate-500">Direção</dt>
+                    <dt className="text-xs text-slate-500">Diretora Geral</dt>
                     <dd className="mt-0.5 font-medium text-slate-800">
                       {fields.directorName || "—"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-slate-500">Equipe pedagógica</dt>
+                    <dd className="mt-0.5 font-medium text-slate-800">
+                      {[
+                        fields.pedagogicalCoordinator,
+                        fields.secretaryName,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ") || "—"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-slate-500">Turnos</dt>
+                    <dd className="mt-0.5 font-medium text-slate-800">
+                      {fields.shifts.join(", ") || "—"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-slate-500">Salas de aula</dt>
+                    <dd className="mt-0.5 font-medium text-slate-800">
+                      {fields.classrooms || "—"}
+                    </dd>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <dt className="text-xs text-slate-500">Dependências</dt>
+                    <dd className="mt-0.5 font-medium text-slate-800">
+                      {fields.facilities.join(", ") || "—"}
                     </dd>
                   </div>
                   <div>

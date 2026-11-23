@@ -7,6 +7,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
+import type { FacilityOption, ShiftOption } from "@/lib/schools/options";
 import type { SchoolSegment } from "@/lib/schools/segments";
 
 /**
@@ -19,11 +20,14 @@ export const schools = sqliteTable(
     id: text("id").primaryKey(),
     ownerId: text("owner_id").notNull(),
     name: text("name").notNull(),
+    legalName: text("legal_name"),
     slug: text("slug").notNull().unique(),
     segment: text("segment", {
       enum: ["infantil", "fundamental", "medio"],
     }).$type<SchoolSegment>().notNull(),
     cnpj: text("cnpj"),
+    inepCode: text("inep_code"),
+    foundedYear: integer("founded_year"),
     phone: text("phone"),
     email: text("email"),
     zipCode: text("zip_code"),
@@ -36,6 +40,17 @@ export const schools = sqliteTable(
     directorName: text("director_name").notNull(),
     directorEmail: text("director_email"),
     directorPhone: text("director_phone"),
+    pedagogicalCoordinator: text("pedagogical_coordinator"),
+    secretaryName: text("secretary_name"),
+    shifts: text("shifts", { mode: "json" })
+      .$type<ShiftOption[]>()
+      .notNull()
+      .default([]),
+    classrooms: integer("classrooms"),
+    facilities: text("facilities", { mode: "json" })
+      .$type<FacilityOption[]>()
+      .notNull()
+      .default([]),
     status: text("status", { enum: ["ativa", "inativa"] })
       .notNull()
       .default("ativa"),

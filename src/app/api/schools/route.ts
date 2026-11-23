@@ -47,9 +47,12 @@ export async function POST(request: Request) {
       id,
       ownerId: session.user.id,
       name: data.name,
+      legalName: data.legalName || null,
       slug,
       segment: data.segment,
       cnpj: data.cnpj || null,
+      inepCode: data.inepCode || null,
+      foundedYear: data.foundedYear ? Number(data.foundedYear) : null,
       phone: data.phone || null,
       email: data.email || null,
       zipCode: data.zipCode,
@@ -62,6 +65,11 @@ export async function POST(request: Request) {
       directorName: data.directorName,
       directorEmail: data.directorEmail || null,
       directorPhone: data.directorPhone || null,
+      pedagogicalCoordinator: data.pedagogicalCoordinator || null,
+      secretaryName: data.secretaryName || null,
+      shifts: data.shifts,
+      classrooms: data.classrooms ? Number(data.classrooms) : null,
+      facilities: data.facilities,
     });
 
     await tx.insert(schoolMembers).values({
