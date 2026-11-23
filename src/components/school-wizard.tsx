@@ -13,8 +13,13 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
+import {
+  formatCep,
+  onlyDigits,
+  type CepAddress,
+} from "@/lib/schools/cep";
 import {
   FACILITY_OPTIONS,
   SHIFT_OPTIONS,
@@ -190,10 +195,52 @@ export function SchoolWizard() {
   const [fields, setFields] = useState<FormFields>(initialFields);
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
+  const [cepStatus, setCepStatus] = useState<
+    "idle" | "loading" | "not-found" | "error"
+  >("idle");
+  const cepRequest = useRef(0);
 
   function update<K extends keyof FormFields>(key: K, value: FormFields[K]) {
     setFields((current) => ({ ...current, [key]: value }));
     setError("");
+  }
+
+  async function handleZipCodeChange(value: string) {
+    const digits = onlyDigits(value).slice(0, 8);
+    const requestId = ++cepRequest.current;
+
+    setFields((current) => ({ ...current, zipCode: digits }));
+    setError("");
+
+    if (digits.length !== 8) {
+      setCepStatus("idle");
+      return;
+    }
+
+    setCepStatus("loading");
+
+    try {
+      const response = await fetch(`/api/cep/${digits}`);
+      if (requestId !== cepRequest.current) return;
+
+      if (!response.ok) {
+        setCepStatus(response.status === 404 ? "not-found" : "error");
+        return;
+      }
+
+      const address = (await response.json()) as CepAddress;
+      setFields((current) => ({
+        ...current,
+        street: address.street || current.street,
+        complement: current.complement || address.complement,
+        neighborhood: address.neighborhood || current.neighborhood,
+        city: address.city || current.city,
+        state: address.state || current.state,
+      }));
+      setCepStatus("idle");
+    } catch {
+      if (requestId === cepRequest.current) setCepStatus("error");
+    }
   }
 
   function validateStep() {
@@ -213,10 +260,13 @@ export function SchoolWizard() {
       if (required.some((key) => !String(fields[key]).trim())) {
         return "Preencha os campos marcados com *.";
       }
+      if (!/^\d{8}$/.test(fields.zipCode)) {
+        return "Informe um CEP com 8 dígitos.";
+      }
       if (fields.state.trim().length !== 2) {
         return "Informe a sigla do estado com 2 letras.";
       }
-      if (fields.inepCode && !/^\d{8}$/.test(fields.inepCode)) {
+      if (fields.inepCode && !/^\d{8}$/.test(onlyDigits(fields.inepCode))) {
         return "O código INEP deve conter 8 dígitos.";
       }
       if (fields.foundedYear) {
@@ -280,6 +330,14 @@ export function SchoolWizard() {
 
   const segment = fields.segment ? SEGMENTS[fields.segment] : null;
   const modules = fields.segment ? getModules(fields.segment) : [];
+  const cepHint =
+    cepStatus === "loading"
+      ? "Buscando endereço..."
+      : cepStatus === "not-found"
+        ? "CEP não encontrado. Preencha o endereço manualmente."
+        : cepStatus === "error"
+          ? "Consulta indisponível. Preencha o endereço manualmente."
+          : "Digite 8 dígitos para preencher o endereço automaticamente";
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -461,12 +519,13 @@ export function SchoolWizard() {
                 <div className="grid gap-4 sm:grid-cols-6">
                   <Field
                     label="CEP"
-                    value={fields.zipCode}
-                    onChange={(value) => update("zipCode", value)}
-                    placeholder="00000000"
+                    value={formatCep(fields.zipCode)}
+                    onChange={handleZipCodeChange}
+                    placeholder="00000-000"
                     required
+                    hint={cepHint}
                     inputMode="numeric"
-                    maxLength={8}
+                    maxLength={9}
                     className="sm:col-span-2"
                   />
                   <Field

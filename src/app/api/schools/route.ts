@@ -20,8 +20,14 @@ export async function POST(request: Request) {
   const parsed = createSchoolSchema.safeParse(payload);
 
   if (!parsed.success) {
+    const issues = parsed.error.flatten();
+    const firstIssue = Object.values(issues.fieldErrors).flat()[0];
+
     return Response.json(
-      { error: "Confira os dados informados.", issues: parsed.error.flatten() },
+      {
+        error: firstIssue ?? "Confira os dados informados.",
+        issues,
+      },
       { status: 400 },
     );
   }

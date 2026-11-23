@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { onlyDigits } from "./cep";
 import { FACILITY_OPTIONS, SHIFT_OPTIONS } from "./options";
 
 const requiredText = (label: string, max = 120) =>
@@ -25,12 +26,14 @@ export const createSchoolSchema = z.object({
   cnpj: z
     .string()
     .trim()
-    .regex(/^(\d{14})?$/, "CNPJ deve conter 14 dígitos")
+    .transform(onlyDigits)
+    .pipe(z.string().regex(/^(\d{14})?$/, "CNPJ deve conter 14 dígitos"))
     .default(""),
   inepCode: z
     .string()
     .trim()
-    .regex(/^(\d{8})?$/, "Código INEP deve conter 8 dígitos")
+    .transform(onlyDigits)
+    .pipe(z.string().regex(/^(\d{8})?$/, "Código INEP deve conter 8 dígitos"))
     .default(""),
   foundedYear: z
     .string()
@@ -48,7 +51,8 @@ export const createSchoolSchema = z.object({
   zipCode: z
     .string()
     .trim()
-    .regex(/^\d{8}$/, "CEP deve conter 8 dígitos"),
+    .transform(onlyDigits)
+    .pipe(z.string().regex(/^\d{8}$/, "CEP deve conter 8 dígitos")),
   street: requiredText("Rua ou avenida"),
   number: requiredText("Número", 20),
   complement: optionalText(80),
